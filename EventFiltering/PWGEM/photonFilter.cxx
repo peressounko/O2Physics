@@ -26,7 +26,10 @@ using namespace o2::framework::expressions;
 
 struct photonFilter {
   static constexpr int nTrigs{4};
-  enum trigs{kPhot, kEl, kPair, kNbar};
+  enum trigs { kPhot,
+               kEl,
+               kPair,
+               kNbar };
 
   Produces<aod::PhotonFilters> tags;
 
