@@ -44,14 +44,14 @@ DECLARE_SOA_COLUMN(FiredTrigger, firedTrigger, uint8_t); //! Matched with trigge
 DECLARE_SOA_COLUMN(DistBad, distBad, float);             //! distance to closest bad channel
 
 // Columns for track matching
-DECLARE_SOA_INDEX_COLUMN(Track, track);             //! linked to Track table only for tracks that were matched
-DECLARE_SOA_COLUMN(PhosSigma, phosSigma, float);    //! distance to PHOS cluster in sigma
-DECLARE_SOA_COLUMN(CpvSigma, cpvSigma, float);      //! distance to CPV cluster in sigma
+DECLARE_SOA_INDEX_COLUMN(Track, track);          //! linked to Track table only for tracks that were matched
+DECLARE_SOA_COLUMN(PhosSigma, phosSigma, float); //! distance to PHOS cluster in sigma
+DECLARE_SOA_COLUMN(CpvSigma, cpvSigma, float);   //! distance to CPV cluster in sigma
 
 // Columns for MC labels
-DECLARE_SOA_ARRAY_INDEX_COLUMN(McParticle, mcParticle);          //! Array of MC particles that deposited energy in this cluster
-DECLARE_SOA_COLUMN(AmplitudeA, amplitudeA, std::vector<float>);  //! Energy fraction deposited by a particle inside this cluster
-DECLARE_SOA_COLUMN(AmplitAmbA, amplitAmbA, std::vector<float>);  //! Energy fraction deposited by a particle inside this cluster
+DECLARE_SOA_ARRAY_INDEX_COLUMN(McParticle, mcParticle);         //! Array of MC particles that deposited energy in this cluster
+DECLARE_SOA_COLUMN(AmplitudeA, amplitudeA, std::vector<float>); //! Energy fraction deposited by a particle inside this cluster
+DECLARE_SOA_COLUMN(AmplitAmbA, amplitAmbA, std::vector<float>); //! Energy fraction deposited by a particle inside this cluster
 
 } // namespace calocluster
 
@@ -74,17 +74,17 @@ DECLARE_SOA_TABLE(CaloAmbiguousClusters, "AOD", "CALOAMBCLUS", //!
                   calocluster::Time, calocluster::NLM, calocluster::M02, calocluster::M20,
                   calocluster::TrackDist, calocluster::TrackIndex, calocluster::FiredTrigger, calocluster::DistBad);
 
-DECLARE_SOA_TABLE(PHOSMatchedTracks, "AOD", "PHSMATCHTRACKS",                                                                                             //!
-                  o2::soa::Index<>, calocluster::TrackId, 
-                  calocluster::PhosSigma, 
+DECLARE_SOA_TABLE(PHOSMatchedTracks, "AOD", "PHSMATCHTRACKS", //!
+                  o2::soa::Index<>, calocluster::TrackId,
+                  calocluster::PhosSigma,
                   calocluster::CpvSigma); //! Track matched to clusters
 
 DECLARE_SOA_TABLE(PHOSMcLabels, "AOD", "CALOCLUSTERSMC",
-                  calocluster::McParticleIds, 
+                  calocluster::McParticleIds,
                   calocluster::AmplitudeA);
 
 DECLARE_SOA_TABLE(PHOSAmbMcLabels, "AOD", "CALOAMBCLUMC",
-                  calocluster::McParticleIds, 
+                  calocluster::McParticleIds,
                   calocluster::AmplitAmbA);
 
 using CaloCluster = CaloClusters::iterator;

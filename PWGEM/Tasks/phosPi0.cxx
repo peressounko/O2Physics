@@ -50,7 +50,7 @@ struct phosPi0 {
   Configurable<int> mMinCluNcell{"minCluNcell", 2, "min cells in cluster"};
   Configurable<int> mMixedEvents{"mixedEvents", 10, "number of events to mix"};
   Configurable<bool> mEventSelection{"eventSelection", true, "to apply event selection"};
-  Configurable<int> mEvSelTrig{"evSelTrig", kTVXinPHOS, "Select events with this trigger"}; //kTVXinPHOS=24 (May2023)
+  Configurable<int> mEvSelTrig{"evSelTrig", kTVXinPHOS, "Select events with this trigger"}; // kTVXinPHOS=24 (May2023)
   Configurable<float> mOccE{"minOccE", 0.6, "Minimum cluster energy to fill occupancy"};
   Configurable<bool> mMC{"isMC", false, "use MC info"};
 
@@ -176,37 +176,35 @@ struct phosPi0 {
     mHistManager.add("ambcluBothOcc", "Cluster with Both occupancy", HistType::kTH3F, {xAxis, zAxis, modAxis});
     mHistManager.add("ambcluE", "Cluster energy", HistType::kTH3F, {xAxis, zAxis, modAxis});
 
-
-    if(mMC){//Monte-Carlo part
+    if (mMC) { // Monte-Carlo part
       mHistManager.add("primPi0", "primary pi0",
-                     HistType::kTH2F, {amplitudeAxisLarge, rapidityAxis});
+                       HistType::kTH2F, {amplitudeAxisLarge, rapidityAxis});
       mHistManager.add("primPi0phi", "primary pi0",
-                     HistType::kTH1F, {phiAxis});
+                       HistType::kTH1F, {phiAxis});
       mHistManager.add("primPi0Sp", "primary pi0 spectrum",
-                     HistType::kTH1F, {amplitudeAxisLarge});
+                       HistType::kTH1F, {amplitudeAxisLarge});
       mHistManager.add("primPi0SpSel", "primary pi0 spectrum in selected events",
-                     HistType::kTH1F, {amplitudeAxisLarge});
+                       HistType::kTH1F, {amplitudeAxisLarge});
 
       mHistManager.add("primEta", "primary eta",
-                     HistType::kTH2F, {amplitudeAxisLarge, rapidityAxis});
+                       HistType::kTH2F, {amplitudeAxisLarge, rapidityAxis});
       mHistManager.add("mggRePi0", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
       mHistManager.add("mggReEta", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
       mHistManager.add("mggRePi0CPV", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
       mHistManager.add("mggReEtaCPV", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
       mHistManager.add("mggRePi0Disp", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
       mHistManager.add("mggReEtaDisp", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
       mHistManager.add("mggRePi0Both", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
       mHistManager.add("mggReEtaBoth", "inv mass for centrality",
-                     HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
+                       HistType::kTH3F, {mggAxis, amplitudeAxisLarge, modCombAxis});
     }
-
   }
 
   using SelCollisions = soa::Join<aod::Collisions, aod::EvSels>;
@@ -504,10 +502,10 @@ struct phosPi0 {
   using ClusterAmbMC = ClusterAmbMCs::iterator;
 
   void processMC(BCsWithBcSels const& bcs,
-               SelCollisions const& collisions,
-               ClusterMCs const& clusters,
-               ClusterAmbMCs const& ambclusters, 
-               aod::McParticles const& mcparticles)
+                 SelCollisions const& collisions,
+                 ClusterMCs const& clusters,
+                 ClusterAmbMCs const& ambclusters,
+                 aod::McParticles const& mcparticles)
   {
 
     // Filll BC map
@@ -575,25 +573,25 @@ struct phosPi0 {
       }
     }
 
-    //Scan MC particles in all and selected events
+    // Scan MC particles in all and selected events
     for (auto& mctrack : mcparticles) {
-      if(pow(mctrack.vx(), 2) + pow(mctrack.vy(), 2)<1.){ // primary particle
-        if (mctrack.pdgCode()==111){
+      if (pow(mctrack.vx(), 2) + pow(mctrack.vy(), 2) < 1.) { // primary particle
+        if (mctrack.pdgCode() == 111) {
           mHistManager.fill(HIST("primPi0"), mctrack.pt(), mctrack.y());
           mHistManager.fill(HIST("primPi0phi"), mctrack.phi());
-          if(abs(mctrack.y())<0.5){
+          if (abs(mctrack.y()) < 0.5) {
             mHistManager.fill(HIST("primPi0Sp"), mctrack.pt());
-            if(mctrack.mcCollision_as<SelCollisions>().alias_bit(mEvSelTrig)){
+            if (mctrack.mcCollision_as<SelCollisions>().alias_bit(mEvSelTrig)) {
               mHistManager.fill(HIST("primPi0SpSel"), mctrack.pt());
             }
           }
         }
-        if (mctrack.pdgCode()==221){
+        if (mctrack.pdgCode() == 221) {
           mHistManager.fill(HIST("primEta"), mctrack.pt(), mctrack.y());
           mHistManager.fill(HIST("primEtaphi"), mctrack.phi());
-          if(abs(mctrack.y())<0.5){
+          if (abs(mctrack.y()) < 0.5) {
             mHistManager.fill(HIST("primEtaSp"), mctrack.pt());
-            if(mctrack.mcCollision_as<SelCollisions>().alias_bit(mEvSelTrig)){
+            if (mctrack.mcCollision_as<SelCollisions>().alias_bit(mEvSelTrig)) {
               mHistManager.fill(HIST("primEtaSpSel"), mctrack.pt());
             }
           }
@@ -671,35 +669,35 @@ struct phosPi0 {
 
         if (clu.collision() == clu2.collision()) { // Real
           mHistManager.fill(HIST("mggRe"), m, pt, modComb);
-          if(commonParent==111){
+          if (commonParent == 111) {
             mHistManager.fill(HIST("mggRePi0"), m, pt, modComb);
           }
-          if(commonParent==221){
+          if (commonParent == 221) {
             mHistManager.fill(HIST("mggReEta"), m, pt, modComb);
           }
           if (clu.trackdist() > 2. && clu2.trackdist() > 2.) {
             mHistManager.fill(HIST("mggReCPV"), m, pt, modComb);
-            if(commonParent==111){
+            if (commonParent == 111) {
               mHistManager.fill(HIST("mggReCPVPi0"), m, pt, modComb);
             }
-            if(commonParent==221){
+            if (commonParent == 221) {
               mHistManager.fill(HIST("mggReCPVEta"), m, pt, modComb);
             }
           }
           if (TestLambda(clu.e(), clu.m02(), clu.m20()) && TestLambda(clu2.e(), clu2.m02(), clu2.m20())) {
             mHistManager.fill(HIST("mggReDisp"), m, pt, modComb);
-            if(commonParent==111){
+            if (commonParent == 111) {
               mHistManager.fill(HIST("mggReDispPi0"), m, pt, modComb);
             }
-            if(commonParent==221){
+            if (commonParent == 221) {
               mHistManager.fill(HIST("mggReDispEta"), m, pt, modComb);
             }
             if (clu.trackdist() > 2. && clu2.trackdist() > 2.) {
               mHistManager.fill(HIST("mggReBoth"), m, pt, modComb);
-              if(commonParent==111){
+              if (commonParent == 111) {
                 mHistManager.fill(HIST("mggReBothPi0"), m, pt, modComb);
               }
-              if(commonParent==221){
+              if (commonParent == 221) {
                 mHistManager.fill(HIST("mggReBothEta"), m, pt, modComb);
               }
             }
@@ -839,8 +837,6 @@ struct phosPi0 {
   }
 
   PROCESS_SWITCH(phosPi0, processMC, "Process MC data", false);
-
-
 
   //_____________________________________________________________________________
   int ModuleCombination(int m1, int m2)
