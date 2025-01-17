@@ -374,7 +374,7 @@ struct phosPi0 {
     if constexpr (isMC) {
       // check current collision Id for clusters
       int cluMcBCId = -1;
-      for (const auto &clu : clusters) {
+      for (const auto& clu : clusters) {
         auto mcList = clu.labels(); // const std::vector<int>
         int nParents = mcList.size();
         for (int iParent = 0; iParent < nParents; iParent++) { // Not found nbar parent yiet
@@ -462,7 +462,7 @@ struct phosPi0 {
       }
       Photon ph1(clu.px(), clu.py(), clu.pz(), clu.e(), clu.mod(), testLambda(clu.e(), clu.m02(), clu.m20()), clu.trackdist() > cpvCut, mcLabel);
       // Mix with other photons added to stack
-      for (cosnt auto & ph2 : mCurEvent) {
+      for (cosnt auto& ph2 : mCurEvent) {
         double m = std::pow(ph1.e + ph2.e, 2) - std::pow(ph1.px + ph2.px, 2) -
                    std::pow(ph1.py + ph2.py, 2) - std::pow(ph1.pz + ph2.pz, 2);
         if (m > 0) {
@@ -510,9 +510,9 @@ struct phosPi0 {
     }
 
     // Mixed
-    for (const auto & ph1 : mCurEvent) {
-      for (const auto & mixEvent : mMixedEvents[mixedEventBin]) {
-        for (const auto &ph2 : mixEvent) {
+    for (const auto& ph1 : mCurEvent) {
+      for (const auto& mixEvent : mMixedEvents[mixedEventBin]) {
+        for (const auto& ph2 : mixEvent) {
           double m = std::pow(ph1.e + ph2.e, 2) - std::pow(ph1.px + ph2.px, 2) -
                      std::pow(ph1.py + ph2.py, 2) - std::pow(ph1.pz + ph2.pz, 2);
           if (m > 0) {
@@ -597,14 +597,14 @@ struct phosPi0 {
       int mcLabel = -1;
       Photon ph1(clu.px(), clu.py(), clu.pz(), clu.e(), clu.mod(), testLambda(clu.e(), clu.m02(), clu.m20()), clu.trackdist() > cpvCut, mcLabel);
       // Mix with other photons added to stack
-      for (const auto & ph2 : mCurEvent) {
+      for (const auto& ph2 : mCurEvent) {
         double m = std::pow(ph1.e + ph2.e, 2) - std::pow(ph1.px + ph2.px, 2) -
                    std::pow(ph1.py + ph2.py, 2) - std::pow(ph1.pz + ph2.pz, 2);
         if (m > 0) {
           m = std::sqrt(m);
         }
         double pt = std::sqrt(std::pow(ph1.px + ph2.px, 2) +
-                         std::pow(ph1.py + ph2.py, 2));
+                              std::pow(ph1.py + ph2.py, 2));
         int modComb = moduleCombination(ph1.mod, ph2.mod);
         hReMod->Fill(m, pt, modComb);
         hReAll->Fill(m, pt);
@@ -625,16 +625,16 @@ struct phosPi0 {
     }
 
     // Mixed
-    for (const auto & ph1 : mCurEvent) {
-      for (const auto & mixEvent : mMixedEvents[mixedEventBin]) {
-        for (const auto &ph2 : mixEvent) {
+    for (const auto& ph1 : mCurEvent) {
+      for (const auto& mixEvent : mMixedEvents[mixedEventBin]) {
+        for (const auto& ph2 : mixEvent) {
           double m = std::pow(ph1.e + ph2.e, 2) - std::pow(ph1.px + ph2.px, 2) -
                      std::pow(ph1.py + ph2.py, 2) - std::pow(ph1.pz + ph2.pz, 2);
           if (m > 0) {
             m = std::sqrt(m);
           }
           double pt = std::sqrt(std::pow(ph1.px + ph2.px, 2) +
-                           std::pow(ph1.py + ph2.py, 2));
+                                std::pow(ph1.py + ph2.py, 2));
           int modComb = moduleCombination(ph1.mod, ph2.mod);
           hMiMod->Fill(m, pt, modComb);
           hMiAll->Fill(m, pt);

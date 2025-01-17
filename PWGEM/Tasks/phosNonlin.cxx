@@ -180,7 +180,7 @@ struct phosNonlin {
 
     mCurEvent.clear();
     int i, j, k, l;
-    for (auto const & clu : clusters) {
+    for (auto const& clu : clusters) {
       if (clu.e() < minCluE ||
           clu.ncell() < minCluNcell ||
           clu.time() > maxCluTime || clu.time() < minCluTime ||

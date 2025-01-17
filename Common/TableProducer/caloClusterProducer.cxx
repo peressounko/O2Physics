@@ -76,8 +76,8 @@ struct caloClusterProducerTask {
   static constexpr int16_t kCpvX = 7; // grid 6 steps along z and 7 along phi as largest match ellips 20x20 cm
   static constexpr int16_t kCpvZ = 6;
   static constexpr int16_t kCpvCells = 4 * kCpvX * kCpvZ; // 4 modules
-  static constexpr float kCpvMaxX = 73;                    // max CPV coordinate phi
-  static constexpr float kCpvMaxZ = 63;                    // max CPV coordinate z
+  static constexpr float kCpvMaxX = 73;                   // max CPV coordinate phi
+  static constexpr float kCpvMaxZ = 63;                   // max CPV coordinate z
 
   class TrackMatch
   {
@@ -128,7 +128,7 @@ struct caloClusterProducerTask {
     }
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (auto & bc : bcs) {
+    for (auto& bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -136,7 +136,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (const auto & cl : colls) {
+    for (const auto& cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -351,7 +351,7 @@ struct caloClusterProducerTask {
           float sigmaX = 1. / std::min(5.2, 1.111 + 0.56 * std::exp(-0.031 * e * e) + 4.8 / std::pow(e + 0.61, 3)); // inverse sigma X
           float sigmaZ = 1. / std::min(3.3, 1.12 + 0.35 * std::exp(-0.032 * e * e) + 0.75 / std::pow(e + 0.24, 3)); // inverse sigma Z
 
-          for (const int & indx : regions) {
+          for (const int& indx : regions) {
             if (indx >= 0 && indx < kCpvCells) {
               for (int ii = cpvPoints->mStart[indx]; ii < cpvPoints->mEnd[indx]; ii++) {
                 auto p = cpvMatchPoints[indx][ii];
@@ -422,7 +422,7 @@ struct caloClusterProducerTask {
     }
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (auto const & bc : bcs) {
+    for (auto const& bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -430,7 +430,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (auto const &cl : colls) {
+    for (auto const& cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -694,7 +694,7 @@ struct caloClusterProducerTask {
         mclabels.clear();
         mcamplitudes.clear();
         gsl::span<const o2::phos::MCLabel> spDigList = outputTruthCont.getLabels(i);
-        for (const auto &cellLab : spDigList) {
+        for (const auto& cellLab : spDigList) {
           mclabels.push_back(cellLab.getTrackID()); // Track ID in current event?
           mcamplitudes.push_back(cellLab.getEdep());
         }
@@ -765,7 +765,7 @@ struct caloClusterProducerTask {
 
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (const auto &bc : bcs) {
+    for (const auto& bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -773,7 +773,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (const auto &cl : colls) {
+    for (const auto& cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -1174,7 +1174,7 @@ struct caloClusterProducerTask {
 
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (const auto & bc : bcs) {
+    for (const auto& bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -1182,7 +1182,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (const auto & cl : colls) {
+    for (const auto& cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -1545,7 +1545,7 @@ struct caloClusterProducerTask {
         mclabels.clear();
         mcamplitudes.clear();
         gsl::span<const o2::phos::MCLabel> spDigList = outputTruthCont.getLabels(i);
-        for (const auto & cellLab : spDigList) {
+        for (const auto& cellLab : spDigList) {
           mclabels.push_back(cellLab.getTrackID()); // Track ID in current event?
           mcamplitudes.push_back(cellLab.getEdep());
         }
@@ -1617,7 +1617,7 @@ struct caloClusterProducerTask {
     const float etaMax = 0.178266;
     double bz = o2::base::Propagator::Instance()->getNominalBz(); // magnetic field
 
-    trackPhi = RecoDecay::constrainAngle(trackPhi,0.,1); //constrain angle to range 0,twoPi
+    trackPhi = RecoDecay::constrainAngle(trackPhi, 0., 1);                       // constrain angle to range 0,twoPi
     if (trackPhi < phiMin || trackPhi > phiMax || std::abs(trackEta) > etaMax) { // do not match even approximately
       return false;
     }
@@ -1632,7 +1632,7 @@ struct caloClusterProducerTask {
     }
 
     // get PHOS radius
-    const double shiftY = -1.26;    // Depth-optimized
+    const double shiftY = -1.26;       // Depth-optimized
     double posL[3] = {0., 0., shiftY}; // local position at the center of module
     double posG[3] = {0};
     geomPHOS->getAlignmentMatrix(module)->LocalToMaster(posL, posG);
