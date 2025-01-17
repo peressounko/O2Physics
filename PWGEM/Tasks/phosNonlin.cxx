@@ -9,6 +9,11 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
+/// \file phosNonlin.cxx
+/// \brief task to calculate PHOS non-lienarity based on pi0 peak position
+/// \author Dmitri Peresunko <Dmitri.Peresunko@cern.ch>
+///
+
 #include <climits>
 #include <cstdlib>
 #include <map>
@@ -20,6 +25,8 @@
 #include "Common/DataModel/Centrality.h"
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/Multiplicity.h"
+#include "EventFiltering/Zorro.h"
+#include "EventFiltering/ZorroSummary.h"
 
 #include "Framework/ConfigParamSpec.h"
 #include "Framework/runDataProcessing.h"
@@ -34,27 +41,23 @@
 #include "CCDB/BasicCCDBManager.h"
 #include "DataFormatsParameters/GRPLHCIFData.h"
 
-/// \struct PHOS pi0 analysis
-/// \brief Monitoring task for PHOS related quantities
-/// \author Dmitri Peresunko, NRC "Kurchatov institute"
-/// \since Nov, 2022
-///
-
 using namespace o2;
 using namespace o2::aod::evsel;
 using namespace o2::framework;
 using namespace o2::framework::expressions;
 
 struct phosNonlin {
-  Configurable<int> mEvSelTrig{"mEvSelTrig", kTVXinPHOS, "Select events with this trigger"};
-  Configurable<int> mParamType{"mParamType", 0, "Functional form 0: a-la data, 1: a-la MC"};
-  Configurable<float> mMinCluE{"mMinCluE", 0.1, "Minimum cluster energy for analysis"};
-  Configurable<float> mMinCluTime{"minCluTime", -25.e-9, "Min. cluster time"};
-  Configurable<float> mMaxCluTime{"maxCluTime", 25.e-9, "Max. cluster time"};
-  Configurable<int> mMinCluNcell{"minCluNcell", 1, "min cells in cluster"};
-  Configurable<float> mMinM02{"minM02", 0.2, "Min disp M02 cut"};
-  Configurable<int> mNMixedEvents{"nMixedEvents", 2, "number of events to mix"};
-  Configurable<bool> mSelectOneCollPerBC{"selectOneColPerBC", true, "skip multiple coll. per bc"};
+  Configurable<bool> skimmedProcessing{"skimmedProcessing", true, "Skimmed dataset processing"};
+  Configurable<std::string> mTrigName{"trigName", "fPHOSPhoton", "name of offline trigger"};
+  Configurable<std::string> zorroCCDBpath{"zorroCCDBpath", "/Users/m/mpuccio/EventFiltering/OTS/", "path to the zorro ccdb objects"};
+  Configurable<int> evSelTrig{"evSelTrig", kTVXinPHOS, "Select events with this trigger"};
+  Configurable<int> paramType{"paramType", 0, "Functional form 0: a-la data, 1: a-la MC"};
+  Configurable<float> minCluE{"minCluE", 0.1, "Minimum cluster energy for analysis"};
+  Configurable<float> minCluTime{"minCluTime", -25.e-9, "Min. cluster time"};
+  Configurable<float> maxCluTime{"maxCluTime", 25.e-9, "Max. cluster time"};
+  Configurable<int> minCluNcell{"minCluNcell", 1, "min cells in cluster"};
+  Configurable<float> minM02{"minM02", 0.2, "Min disp M02 cut"};
+  Configurable<int> nMixedEvents{"nMixedEvents", 2, "number of events to mix"};
   Configurable<float> mA{"mA", 9.34913e-01, "A"};
   Configurable<float> mdAi{"mdAi", 0., "A var. vs i"};
   Configurable<float> mdAj{"mdAj", 0., "A var. vs j"};
@@ -82,25 +85,30 @@ struct phosNonlin {
 
   using SelCollisions = soa::Join<aod::Collisions, aod::EvSels>;
   using BCsWithBcSels = soa::Join<aod::BCs, aod::BcSels>;
+  o2::framework::Service<o2::ccdb::BasicCCDBManager> ccdb;
 
   HistogramRegistry mHistManager1{"phosNonlinHistograms"};
 
+  Zorro zorro;
+  OutputObj<ZorroSummary> zorroSummary{"zorroSummary"};
+
   // class to keep photon candidate parameters
-  class photon : public TLorentzVector
+  class Photon : public TLorentzVector
   {
    public:
-    photon() = default;
-    photon(const photon& p) = default;
-    photon(double px, double py, double pz, double e, int m) : TLorentzVector(px, py, pz, e), mod(m) {}
+    Photon() = default;
+    Photon(const Photon& p) = default;
+    Photon(double px, double py, double pz, double e, int m) : TLorentzVector(px, py, pz, e), mod(m) {}
 
    public:
     int mod;
   };
 
+  int mRunNumber = -1;   // Current run number
   int mixedEventBin = 0; // Which list of Mixed use for mixing
-  std::vector<photon> mCurEvent;
-  static constexpr int nMaxMixBins = 10; // maximal number of kinds of events for mixing
-  std::array<std::deque<std::vector<photon>>, nMaxMixBins> mMixedEvents;
+  std::vector<Photon> mCurEvent;
+  static constexpr int kMaxMixBins = 10; // maximal number of kinds of events for mixing
+  std::array<std::deque<std::vector<Photon>>, kMaxMixBins> mMixedEvents;
 
   // fast access to histos
   static constexpr int mNp = 10;
@@ -115,6 +123,12 @@ struct phosNonlin {
   void init(InitContext const&)
   {
     LOG(info) << "Initializing PHOS nonlin analysis task ...";
+
+    zorroSummary.setObject(zorro.getZorroSummary());
+    zorro.setBaseCCDBPath(zorroCCDBpath.value);
+    ccdb->setCaching(true);
+    ccdb->setLocalObjectValidityChecking();
+    ccdb->setFatalWhenNull(false);
 
     const AxisSpec
       ptAxis{pt, "p_{T} (GeV/c)"},
@@ -141,27 +155,41 @@ struct phosNonlin {
 
   /// \brief Process PHOS data
   void process(SelCollisions::iterator const& col,
-               aod::CaloClusters const& clusters)
+               aod::CaloClusters const& clusters,
+               aod::BCsWithTimestamps const&)
   {
     // Fill number of events of different kind
-    if (!col.alias_bit(mEvSelTrig)) {
-      return;
+    if (skimmedProcessing) {
+      auto bc = col.template bc_as<aod::BCsWithTimestamps>();
+      if (mRunNumber != bc.runNumber()) {
+        zorro.initCCDB(ccdb.service, bc.runNumber(), bc.timestamp(), trigName);
+        zorro.populateHistRegistry(mHistManager1, bc.runNumber());
+        mRunNumber = bc.runNumber();
+      }
+
+      if (!zorro.isSelected(bc.globalBC())) {
+        return; ///
+      }
+    } else {
+      if (!col.selection_bit(evSelTrig)) {
+        return;
+      }
     }
 
     mixedEventBin = findMixedEventBin(col.posZ());
 
     mCurEvent.clear();
     int i, j, k, l;
-    for (const auto& clu : clusters) {
-      if (clu.e() < mMinCluE ||
-          clu.ncell() < mMinCluNcell ||
-          clu.time() > mMaxCluTime || clu.time() < mMinCluTime ||
-          clu.m02() < mMinM02) {
+    for (auto const & clu : clusters) {
+      if (clu.e() < minCluE ||
+          clu.ncell() < minCluNcell ||
+          clu.time() > maxCluTime || clu.time() < minCluTime ||
+          clu.m02() < minM02) {
         continue;
       }
-      photon ph1(clu.px(), clu.py(), clu.pz(), clu.e(), clu.mod());
+      Photon ph1(clu.px(), clu.py(), clu.pz(), clu.e(), clu.mod());
       // Mix with other photons added to stack
-      for (auto ph2 : mCurEvent) {
+      for (auto const ph2 : mCurEvent) {
         double m = (ph1 + ph2).M();
         double pt1 = ph1.Pt();
         double pt2 = ph2.Pt();
@@ -170,8 +198,8 @@ struct phosNonlin {
         l = mNp / 2;
         for (i = 0; i < mNp; i++) {
           for (j = 0; j < mNp; j++) {
-            if (ph1.E() * NonLin(ph1.E(), i, j, k, l) > mMinCluE && ph2.E() * NonLin(ph2.E(), i, j, k, l) > mMinCluE) {
-              Double_t m12 = m * TMath::Sqrt(NonLin(ph1.E(), i, j, k, l) * NonLin(ph2.E(), i, j, k, l));
+            if (ph1.E() * nonLin(ph1.E(), i, j, k, l) > minCluE && ph2.E() * nonLin(ph2.E(), i, j, k, l) > minCluE) {
+              double m12 = m * std::sqrt(nonLin(ph1.E(), i, j, k, l) * nonLin(ph2.E(), i, j, k, l));
               hReIJ[i * mNp + j]->Fill(m12, pt1);
               hReIJ[i * mNp + j]->Fill(m12, pt2);
               // if(ph1.mod==ph2.mod){
@@ -185,8 +213,8 @@ struct phosNonlin {
         j = mNp / 2;
         for (k = 0; k < mNp; k++) {
           for (l = 0; l < mNp; l++) {
-            if (ph1.E() * NonLin(ph1.E(), i, j, k, l) > mMinCluE && ph2.E() * NonLin(ph2.E(), i, j, k, l) > mMinCluE) {
-              Double_t m12 = m * TMath::Sqrt(NonLin(ph1.E(), i, j, k, l) * NonLin(ph2.E(), i, j, k, l));
+            if (ph1.E() * nonLin(ph1.E(), i, j, k, l) > minCluE && ph2.E() * nonLin(ph2.E(), i, j, k, l) > minCluE) {
+              double m12 = m * std::sqrt(nonLin(ph1.E(), i, j, k, l) * nonLin(ph2.E(), i, j, k, l));
               hReKL[k * mNp + l]->Fill(m12, pt1);
               hReKL[k * mNp + l]->Fill(m12, pt2);
               // if(ph1.mod==ph2.mod){
@@ -202,9 +230,9 @@ struct phosNonlin {
     }
 
     // Mixed
-    for (auto ph1 : mCurEvent) {
-      for (auto mixEvent : mMixedEvents[mixedEventBin]) {
-        for (auto ph2 : mixEvent) {
+    for (auto const ph1 : mCurEvent) {
+      for (auto const mixEvent : mMixedEvents[mixedEventBin]) {
+        for (auto const ph2 : mixEvent) {
           double m = (ph1 + ph2).M();
           double pt1 = ph1.Pt();
           double pt2 = ph2.Pt();
@@ -213,8 +241,8 @@ struct phosNonlin {
           j = mNp / 2;
           k = mNp / 2;
           l = mNp / 2;
-          if (ph1.E() * NonLin(ph1.E(), i, j, k, l) > mMinCluE && ph2.E() * NonLin(ph2.E(), i, j, k, l) > mMinCluE) {
-            Double_t m12 = m * TMath::Sqrt(NonLin(ph1.E(), i, j, k, l) * NonLin(ph2.E(), i, j, k, l));
+          if (ph1.E() * nonLin(ph1.E(), i, j, k, l) > minCluE && ph2.E() * nonLin(ph2.E(), i, j, k, l) > minCluE) {
+            double m12 = m * std::sqrt(nonLin(ph1.E(), i, j, k, l) * nonLin(ph2.E(), i, j, k, l));
             hMi->Fill(m12, pt1);
             hMi->Fill(m12, pt2);
           }
@@ -225,7 +253,7 @@ struct phosNonlin {
     // Fill events to store and remove oldest to keep buffer size
     if (mCurEvent.size() > 0) {
       mMixedEvents[mixedEventBin].emplace_back(mCurEvent);
-      if (mMixedEvents[mixedEventBin].size() > static_cast<size_t>(mNMixedEvents)) {
+      if (mMixedEvents[mixedEventBin].size() > static_cast<size_t>(nMixedEvents)) {
         mMixedEvents[mixedEventBin].pop_front();
       }
     }
@@ -240,33 +268,33 @@ struct phosNonlin {
 
     if (res < 0)
       return 0;
-    if (res >= nMaxMixBins)
-      return nMaxMixBins - 1;
+    if (res >= kMaxMixBins)
+      return kMaxMixBins - 1;
     return res;
   }
   //_____________________________________________________________________________
-  double NonLin(double en, int i, int j, int k, int l)
+  double nonLin(double en, int i, int j, int k, int l)
   {
     if (en <= 0.)
       return 0.;
-    if (mParamType == 0) {
-      const Double_t a = mA + mdAi * (i - mNp / 2) + mdAj * (j - mNp / 2);
-      const Double_t b = mB + mdBi * (i - mNp / 2) + mdBj * (j - mNp / 2);
-      const Double_t c = mC + mdCi * (i - mNp / 2) + mdCj * (j - mNp / 2);
-      const Double_t d = mD + mdDk * (k - mNp / 2) + mdDl * (l - mNp / 2);
-      const Double_t e = mE + mdEk * (k - mNp / 2) + mdEl * (l - mNp / 2);
-      const Double_t f = mF + mdFk * (k - mNp / 2) + mdFl * (l - mNp / 2);
-      const Double_t g = mG + mdGk * (k - mNp / 2) + mdGl * (l - mNp / 2);
-      const Double_t s = mS + mdSi * (i - mNp / 2) + mdSj * (j - mNp / 2);
+    if (paramType == 0) {
+      const double a = mA + mdAi * (i - mNp / 2) + mdAj * (j - mNp / 2);
+      const double b = mB + mdBi * (i - mNp / 2) + mdBj * (j - mNp / 2);
+      const double c = mC + mdCi * (i - mNp / 2) + mdCj * (j - mNp / 2);
+      const double d = mD + mdDk * (k - mNp / 2) + mdDl * (l - mNp / 2);
+      const double e = mE + mdEk * (k - mNp / 2) + mdEl * (l - mNp / 2);
+      const double f = mF + mdFk * (k - mNp / 2) + mdFl * (l - mNp / 2);
+      const double g = mG + mdGk * (k - mNp / 2) + mdGl * (l - mNp / 2);
+      const double s = mS + mdSi * (i - mNp / 2) + mdSj * (j - mNp / 2);
       return a + b / en + c / (en * en) + d / ((en - e) * (en - e) + f * f) + g * en + s / (en * en * en * en);
     }
-    if (mParamType == 1) {
-      const Double_t a = mA + mdAi * (i - mNp / 2) + mdAj * (j - mNp / 2);
-      const Double_t b = mB + mdBi * (i - mNp / 2) + mdBj * (j - mNp / 2);
-      const Double_t c = mC + mdCi * (i - mNp / 2) + mdCj * (j - mNp / 2);
-      const Double_t d = mD + mdDk * (k - mNp / 2) + mdDl * (l - mNp / 2);
-      const Double_t e = mE + mdEk * (k - mNp / 2) + mdEl * (l - mNp / 2);
-      return a + b / TMath::Sqrt(en) + c / en + d / (en * TMath::Sqrt(en)) + e / (en * en);
+    if (paramType == 1) {
+      const double a = mA + mdAi * (i - mNp / 2) + mdAj * (j - mNp / 2);
+      const double b = mB + mdBi * (i - mNp / 2) + mdBj * (j - mNp / 2);
+      const double c = mC + mdCi * (i - mNp / 2) + mdCj * (j - mNp / 2);
+      const double d = mD + mdDk * (k - mNp / 2) + mdDl * (l - mNp / 2);
+      const double e = mE + mdEk * (k - mNp / 2) + mdEl * (l - mNp / 2);
+      return a + b / std::sqrt(en) + c / en + d / (en * std::sqrt(en)) + e / (en * en);
     }
     return 0.;
   }

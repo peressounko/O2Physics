@@ -26,7 +26,7 @@ o2physics_add_dpl_workflow(phostrigqa
 
 o2physics_add_dpl_workflow(phospi0
                     SOURCES phosPi0.cxx
-                    PUBLIC_LINK_LIBRARIES O2::Framework O2::DetectorsBase O2Physics::AnalysisCore O2::PHOSBase
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2::DetectorsBase O2Physics::AnalysisCore O2::PHOSBase O2Physics::EventFilteringUtils
                     COMPONENT_NAME Analysis)
 
 o2physics_add_dpl_workflow(phoscalib
@@ -46,7 +46,7 @@ o2physics_add_dpl_workflow(phosnbar
 
 o2physics_add_dpl_workflow(phosnonlin
                     SOURCES phosNonlin.cxx
-                    PUBLIC_LINK_LIBRARIES O2::Framework O2::DetectorsBase O2Physics::AnalysisCore O2::PHOSBase O2::PHOSReconstruction
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2::DetectorsBase O2Physics::AnalysisCore O2::PHOSBase O2::PHOSReconstruction O2Physics::EventFilteringUtils
                     COMPONENT_NAME Analysis)
 
 o2physics_add_dpl_workflow(phoselid

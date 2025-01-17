@@ -9,6 +9,11 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
+/// \file caloClusterProducer.cxx
+/// \brief Produces PHOS clusters from PHOS cells
+///
+/// \author Dmitri Peresunko <Dmitri.Peresunko@cern.ch>
+
 #include "Framework/ConfigParamSpec.h"
 #include "Framework/runDataProcessing.h"
 #include "Framework/AnalysisTask.h"
@@ -36,7 +41,7 @@
 using namespace o2::framework;
 using namespace o2;
 
-using mcCells = o2::soa::Join<aod::Calos, aod::McCaloLabels_001>;
+using McCells = o2::soa::Join<aod::Calos, aod::McCaloLabels_001>;
 
 struct caloClusterProducerTask {
   Produces<aod::CaloClusters> clucursor;
@@ -46,13 +51,13 @@ struct caloClusterProducerTask {
   Produces<aod::PHOSAmbCluLabels> cluambmccursor;
 
   Configurable<bool> isMC{"isMC", 0, "0 - data, 1 - MC"};
-  Configurable<bool> useCoreE{"coreE", 0, "0 - full energy, 1 - core energy"};
+  Configurable<bool> useCoreE{"useCoreE", 0, "0 - full energy, 1 - core energy"};
   Configurable<bool> skipL1phase{"skipL1phase", false, "skip or apply L1phase time correction"};
-  Configurable<int> mNonlinType{"nonlinType", 1, "0:no corr, 1: default"};
-  Configurable<std::vector<double>> cpvMinE{"cpvCluMinAmp", {20., 50., 50.}, "minimal CPV cluster amplitude per module"};
-  Configurable<std::string> mBadMapPath{"badmapPath", "PHS/Calib/BadMap", "path to BadMap snapshot"};
-  Configurable<std::string> mCalibPath{"calibPath", "PHS/Calib/CalibParams", "path to Calibration snapshot"};
-  Configurable<std::string> mL1PhasePath{"L1phasePath", "PHS/Calib/L1phase", "path to L1phase snapshot"};
+  Configurable<int> nonlinType{"nonlinType", 1, "0:no corr, 1: data, 2: MC"};
+  Configurable<std::vector<double>> cpvMinE{"cpvMinE", {20., 50., 50.}, "minimal CPV cluster amplitude per module"};
+  Configurable<std::string> badMapPath{"badMapPath", "PHS/Calib/BadMap", "path to BadMap snapshot"};
+  Configurable<std::string> calibPath{"calibPath", "PHS/Calib/CalibParams", "path to Calibration snapshot"};
+  Configurable<std::string> l1phasePath{"l1phasePath", "PHS/Calib/L1phase", "path to L1phase snapshot"};
 
   Service<o2::ccdb::BasicCCDBManager> ccdb;
 
@@ -71,15 +76,15 @@ struct caloClusterProducerTask {
   static constexpr int16_t kCpvX = 7; // grid 6 steps along z and 7 along phi as largest match ellips 20x20 cm
   static constexpr int16_t kCpvZ = 6;
   static constexpr int16_t kCpvCells = 4 * kCpvX * kCpvZ; // 4 modules
-  static constexpr float cpvMaxX = 73;                    // max CPV coordinate phi
-  static constexpr float cpvMaxZ = 63;                    // max CPV coordinate z
+  static constexpr float kCpvMaxX = 73;                    // max CPV coordinate phi
+  static constexpr float kCpvMaxZ = 63;                    // max CPV coordinate z
 
-  class trackMatch
+  class TrackMatch
   {
    public:
-    trackMatch() = default;
-    trackMatch(float x, float z, int i) : pX(x), pZ(z), indx(i) {}
-    ~trackMatch() = default;
+    TrackMatch() = default;
+    TrackMatch(float x, float z, int i) : pX(x), pZ(z), indx(i) {}
+    ~TrackMatch() = default;
 
    public:
     float pX = 9999.; // X (phi) track coordinate in PHOS plane
@@ -87,11 +92,11 @@ struct caloClusterProducerTask {
     int indx = -1;    // track global index
   };
 
-  class trackTrigRec
+  class TrackTrigRec
   {
    public:
-    trackTrigRec() = default;
-    ~trackTrigRec() = default;
+    TrackTrigRec() = default;
+    ~TrackTrigRec() = default;
 
    public:
     int64_t mTR;           // BC ref
@@ -123,7 +128,7 @@ struct caloClusterProducerTask {
     }
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (auto bc : bcs) {
+    for (auto & bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -131,7 +136,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (auto cl : colls) {
+    for (const auto & cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -149,11 +154,11 @@ struct caloClusterProducerTask {
     // Fill output table
 
     // calibration may be updated by CCDB fetcher
-    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(mBadMapPath, timestamp);
-    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(mCalibPath, timestamp);
+    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(badMapPath, timestamp);
+    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(calibPath, timestamp);
 
     if (!isMC && !skipL1phase) {
-      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(mL1PhasePath, timestamp);
+      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(l1phasePath, timestamp);
       if (vec) {
         clusterizerPHOS->setL1phase((*vec)[0]);
       } else {
@@ -182,7 +187,7 @@ struct caloClusterProducerTask {
 
     o2::InteractionRecord ir;
     const int kPHOS = 0;
-    for (auto& c : cells) {
+    for (const auto& c : cells) {
       if (c.caloType() != kPHOS) // PHOS
         continue;
       // Fix for bug in trigger digits
@@ -216,7 +221,7 @@ struct caloClusterProducerTask {
     // Find  CPV clusters corresponding to PHOS trigger records
     std::vector<std::pair<float, float>> cpvMatchPoints[kCpvCells];
     // Number of entries in each cell per TrigRecord
-    std::vector<trackTrigRec> cpvNMatchPoints;
+    std::vector<TrackTrigRec> cpvNMatchPoints;
     cpvNMatchPoints.reserve(outputPHOSClusterTrigRecs.size());
     int64_t curBC = -1;
     if (cpvs.begin() != cpvs.end()) {
@@ -245,7 +250,7 @@ struct caloClusterProducerTask {
       if (cpvclu.amplitude() < static_cast<std::vector<double>>(cpvMinE)[static_cast<int>(cpvclu.moduleNumber()) - 2]) {
         continue;
       }
-      int index = CpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
+      int index = cpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
       cpvMatchPoints[index].emplace_back(cpvclu.posX(), cpvclu.posZ());
     }
     if (cpvNMatchPoints.size() > 0) {
@@ -255,7 +260,7 @@ struct caloClusterProducerTask {
     }
 
     // Fill output
-    for (auto& cluTR : outputPHOSClusterTrigRecs) {
+    for (const auto& cluTR : outputPHOSClusterTrigRecs) {
       int firstClusterInEvent = cluTR.getFirstEntry();
       int lastClusterInEvent = firstClusterInEvent + cluTR.getNumberOfObjects();
 
@@ -293,7 +298,7 @@ struct caloClusterProducerTask {
         // Correction for the depth of the shower starting point (TDR p 127)
         const float para = 0.925;
         const float parb = 6.52;
-        float depth = para * TMath::Log(e) + parb;
+        float depth = para * std::log(e) + parb;
         posX -= posX * depth / 460.;
         posZ -= (posZ - vtx.Z()) * depth / 460.;
 
@@ -306,51 +311,51 @@ struct caloClusterProducerTask {
           continue;
         }
 
-        e = Nonlinearity(e);
+        e = nonlinearity(e);
 
         mom.SetMag(e);
 
         float cpvdist = 99.;
-        const float cellSizeX = 2 * cpvMaxX / kCpvX;
-        const float cellSizeZ = 2 * cpvMaxZ / kCpvZ;
+        const float cellSizeX = 2 * kCpvMaxX / kCpvX;
+        const float cellSizeZ = 2 * kCpvMaxZ / kCpvZ;
         // look 9 CPV regions around PHOS cluster
 
         if (mod >= 2 && cpvExist) { // CPV exist in mods 2,3,4
-          int phosIndex = CpvMatchIndex(mod, posX, posZ);
+          int phosIndex = cpvMatchIndex(mod, posX, posZ);
           std::vector<int> regions;
           regions.push_back(phosIndex);
-          if (posX > -cpvMaxX + cellSizeX) {
-            if (posZ > -cpvMaxZ + cellSizeZ) { // bottom left
+          if (posX > -kCpvMaxX + cellSizeX) {
+            if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom left
               regions.push_back(phosIndex - kCpvZ - 1);
             }
             regions.push_back(phosIndex - kCpvZ);
-            if (posZ < cpvMaxZ - cellSizeZ) { // top left
+            if (posZ < kCpvMaxZ - cellSizeZ) { // top left
               regions.push_back(phosIndex - kCpvZ + 1);
             }
           }
-          if (posZ > -cpvMaxZ + cellSizeZ) { // bottom
+          if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom
             regions.push_back(phosIndex - 1);
           }
-          if (posZ < cpvMaxZ - cellSizeZ) { // top
+          if (posZ < kCpvMaxZ - cellSizeZ) { // top
             regions.push_back(phosIndex + 1);
           }
-          if (posX < cpvMaxX - cellSizeX) {
-            if (posZ > -cpvMaxZ + cellSizeZ) { // bottom right
+          if (posX < kCpvMaxX - cellSizeX) {
+            if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom right
               regions.push_back(phosIndex + kCpvZ - 1);
             }
             regions.push_back(phosIndex + kCpvZ);
-            if (posZ < cpvMaxZ - cellSizeZ) { // top right
+            if (posZ < kCpvMaxZ - cellSizeZ) { // top right
               regions.push_back(phosIndex + kCpvZ + 1);
             }
           }
-          float sigmaX = 1. / TMath::Min(5.2, 1.111 + 0.56 * TMath::Exp(-0.031 * e * e) + 4.8 / TMath::Power(e + 0.61, 3)); // inverse sigma X
-          float sigmaZ = 1. / TMath::Min(3.3, 1.12 + 0.35 * TMath::Exp(-0.032 * e * e) + 0.75 / TMath::Power(e + 0.24, 3)); // inverse sigma Z
+          float sigmaX = 1. / std::min(5.2, 1.111 + 0.56 * std::exp(-0.031 * e * e) + 4.8 / std::pow(e + 0.61, 3)); // inverse sigma X
+          float sigmaZ = 1. / std::min(3.3, 1.12 + 0.35 * std::exp(-0.032 * e * e) + 0.75 / std::pow(e + 0.24, 3)); // inverse sigma Z
 
-          for (int indx : regions) {
+          for (const int & indx : regions) {
             if (indx >= 0 && indx < kCpvCells) {
               for (int ii = cpvPoints->mStart[indx]; ii < cpvPoints->mEnd[indx]; ii++) {
                 auto p = cpvMatchPoints[indx][ii];
-                float d = pow((p.first - posX) * sigmaX, 2) + pow((p.second - posZ) * sigmaZ, 2);
+                float d = std::pow((p.first - posX) * sigmaX, 2) + std::pow((p.second - posZ) * sigmaZ, 2);
                 if (d < cpvdist) {
                   cpvdist = d;
                 }
@@ -359,7 +364,7 @@ struct caloClusterProducerTask {
           }
         }
         if (cpvdist != 99.) {      // was evaluated
-          cpvdist = sqrt(cpvdist); // was squared
+          cpvdist = std::sqrt(cpvdist); // was squared
         }
         int cpvindex = -2; // -2 no CPV in event
         if (cpvExist) {
@@ -404,7 +409,7 @@ struct caloClusterProducerTask {
 
   void processStandaloneMC(o2::aod::BCsWithTimestamps const& bcs,
                            o2::aod::Collisions const& colls,
-                           mcCells& cells,
+                           McCells const& cells,
                            o2::aod::CaloTriggers const&,
                            o2::aod::CPVClusters const& cpvs)
   {
@@ -417,7 +422,7 @@ struct caloClusterProducerTask {
     }
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (auto bc : bcs) {
+    for (auto const & bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -425,7 +430,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (auto cl : colls) {
+    for (auto const &cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -443,11 +448,11 @@ struct caloClusterProducerTask {
     // Fill output table
 
     // calibration may be updated by CCDB fetcher
-    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(mBadMapPath, timestamp);
-    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(mCalibPath, timestamp);
+    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(badMapPath, timestamp);
+    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(calibPath, timestamp);
 
     if (!isMC && !skipL1phase) {
-      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(mL1PhasePath, timestamp);
+      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(l1phasePath, timestamp);
       if (vec) {
         clusterizerPHOS->setL1phase((*vec)[0]);
       } else {
@@ -477,7 +482,7 @@ struct caloClusterProducerTask {
     o2::InteractionRecord ir;
     const int kPHOS = 0;
     o2::dataformats::MCTruthContainer<o2::phos::MCLabel> cellTruth;
-    for (auto& c : cells) {
+    for (const auto& c : cells) {
       if (c.caloType() != kPHOS) // PHOS
         continue;
       // Fix for bug in trigger digits
@@ -532,7 +537,7 @@ struct caloClusterProducerTask {
     // Find  CPV clusters corresponding to PHOS trigger records
     std::vector<std::pair<float, float>> cpvMatchPoints[kCpvCells];
     // Number of entries in each cell per TrigRecord
-    std::vector<trackTrigRec> cpvNMatchPoints;
+    std::vector<TrackTrigRec> cpvNMatchPoints;
     cpvNMatchPoints.reserve(outputPHOSClusterTrigRecs.size());
     int64_t curBC = -1;
     if (cpvs.begin() != cpvs.end()) {
@@ -561,7 +566,7 @@ struct caloClusterProducerTask {
       if (cpvclu.amplitude() < static_cast<std::vector<double>>(cpvMinE)[static_cast<int>(cpvclu.moduleNumber()) - 2]) {
         continue;
       }
-      int index = CpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
+      int index = cpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
       cpvMatchPoints[index].emplace_back(cpvclu.posX(), cpvclu.posZ());
     }
     if (cpvNMatchPoints.size() > 0) {
@@ -571,7 +576,7 @@ struct caloClusterProducerTask {
     }
 
     // Fill output
-    for (auto& cluTR : outputPHOSClusterTrigRecs) {
+    for (const auto& cluTR : outputPHOSClusterTrigRecs) {
       int firstClusterInEvent = cluTR.getFirstEntry();
       int lastClusterInEvent = firstClusterInEvent + cluTR.getNumberOfObjects();
 
@@ -609,7 +614,7 @@ struct caloClusterProducerTask {
         // Correction for the depth of the shower starting point (TDR p 127)
         const float para = 0.925;
         const float parb = 6.52;
-        float depth = para * TMath::Log(e) + parb;
+        float depth = para * std::log(e) + parb;
         posX -= posX * depth / 460.;
         posZ -= (posZ - vtx.Z()) * depth / 460.;
 
@@ -622,51 +627,51 @@ struct caloClusterProducerTask {
           continue;
         }
 
-        e = Nonlinearity(e);
+        e = nonlinearity(e);
 
         mom.SetMag(e);
 
         float cpvdist = 99.;
-        const float cellSizeX = 2 * cpvMaxX / kCpvX;
-        const float cellSizeZ = 2 * cpvMaxZ / kCpvZ;
+        const float cellSizeX = 2 * kCpvMaxX / kCpvX;
+        const float cellSizeZ = 2 * kCpvMaxZ / kCpvZ;
         // look 9 CPV regions around PHOS cluster
 
         if (mod >= 2 && cpvExist) { // CPV exist in mods 2,3,4
-          int phosIndex = CpvMatchIndex(mod, posX, posZ);
+          int phosIndex = cpvMatchIndex(mod, posX, posZ);
           std::vector<int> regions;
           regions.push_back(phosIndex);
-          if (posX > -cpvMaxX + cellSizeX) {
-            if (posZ > -cpvMaxZ + cellSizeZ) { // bottom left
+          if (posX > -kCpvMaxX + cellSizeX) {
+            if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom left
               regions.push_back(phosIndex - kCpvZ - 1);
             }
             regions.push_back(phosIndex - kCpvZ);
-            if (posZ < cpvMaxZ - cellSizeZ) { // top left
+            if (posZ < kCpvMaxZ - cellSizeZ) { // top left
               regions.push_back(phosIndex - kCpvZ + 1);
             }
           }
-          if (posZ > -cpvMaxZ + cellSizeZ) { // bottom
+          if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom
             regions.push_back(phosIndex - 1);
           }
-          if (posZ < cpvMaxZ - cellSizeZ) { // top
+          if (posZ < kCpvMaxZ - cellSizeZ) { // top
             regions.push_back(phosIndex + 1);
           }
-          if (posX < cpvMaxX - cellSizeX) {
-            if (posZ > -cpvMaxZ + cellSizeZ) { // bottom right
+          if (posX < kCpvMaxX - cellSizeX) {
+            if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom right
               regions.push_back(phosIndex + kCpvZ - 1);
             }
             regions.push_back(phosIndex + kCpvZ);
-            if (posZ < cpvMaxZ - cellSizeZ) { // top right
+            if (posZ < kCpvMaxZ - cellSizeZ) { // top right
               regions.push_back(phosIndex + kCpvZ + 1);
             }
           }
-          float sigmaX = 1. / TMath::Min(5.2, 1.111 + 0.56 * TMath::Exp(-0.031 * e * e) + 4.8 / TMath::Power(e + 0.61, 3)); // inverse sigma X
-          float sigmaZ = 1. / TMath::Min(3.3, 1.12 + 0.35 * TMath::Exp(-0.032 * e * e) + 0.75 / TMath::Power(e + 0.24, 3)); // inverse sigma Z
+          float sigmaX = 1. / std::min(5.2, 1.111 + 0.56 * std::exp(-0.031 * e * e) + 4.8 / std::pow(e + 0.61, 3)); // inverse sigma X
+          float sigmaZ = 1. / std::min(3.3, 1.12 + 0.35 * std::exp(-0.032 * e * e) + 0.75 / std::pow(e + 0.24, 3)); // inverse sigma Z
 
-          for (int indx : regions) {
+          for (const int indx : regions) {
             if (indx >= 0 && indx < kCpvCells) {
               for (int ii = cpvPoints->mStart[indx]; ii < cpvPoints->mEnd[indx]; ii++) {
                 auto p = cpvMatchPoints[indx][ii];
-                float d = pow((p.first - posX) * sigmaX, 2) + pow((p.second - posZ) * sigmaZ, 2);
+                float d = std::pow((p.first - posX) * sigmaX, 2) + std::pow((p.second - posZ) * sigmaZ, 2);
                 if (d < cpvdist) {
                   cpvdist = d;
                 }
@@ -675,7 +680,7 @@ struct caloClusterProducerTask {
           }
         }
         if (cpvdist != 99.) {      // was evaluated
-          cpvdist = sqrt(cpvdist); // was squared
+          cpvdist = std::sqrt(cpvdist); // was squared
         }
         int cpvindex = -2; // -2 no CPV in event
         if (cpvExist) {
@@ -689,7 +694,7 @@ struct caloClusterProducerTask {
         mclabels.clear();
         mcamplitudes.clear();
         gsl::span<const o2::phos::MCLabel> spDigList = outputTruthCont.getLabels(i);
-        for (auto cellLab : spDigList) {
+        for (const auto &cellLab : spDigList) {
           mclabels.push_back(cellLab.getTrackID()); // Track ID in current event?
           mcamplitudes.push_back(cellLab.getEdep());
         }
@@ -760,7 +765,7 @@ struct caloClusterProducerTask {
 
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (auto bc : bcs) {
+    for (const auto &bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -768,7 +773,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (auto cl : colls) {
+    for (const auto &cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -785,11 +790,11 @@ struct caloClusterProducerTask {
     // Fill output table
 
     // calibration may be updated by CCDB fetcher
-    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(mBadMapPath, timestamp);
-    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(mCalibPath, timestamp);
+    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(badMapPath, timestamp);
+    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(calibPath, timestamp);
 
     if (!isMC && !skipL1phase) {
-      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(mL1PhasePath, timestamp);
+      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(l1phasePath, timestamp);
       if (vec) {
         clusterizerPHOS->setL1phase((*vec)[0]);
       } else {
@@ -818,7 +823,7 @@ struct caloClusterProducerTask {
 
     o2::InteractionRecord ir;
     const int kPHOS = 0;
-    for (auto& c : cells) {
+    for (const auto& c : cells) {
       if (c.caloType() != kPHOS) // PHOS
         continue;
       // Fix for bug in trigger digits
@@ -852,7 +857,7 @@ struct caloClusterProducerTask {
     // Find  CPV clusters corresponding to PHOS trigger records
     std::vector<std::pair<float, float>> cpvMatchPoints[kCpvCells];
     // Number of entries in each cell per TrigRecord
-    std::vector<trackTrigRec> cpvNMatchPoints;
+    std::vector<TrackTrigRec> cpvNMatchPoints;
     cpvNMatchPoints.reserve(outputPHOSClusterTrigRecs.size());
 
     int64_t curBC = -1;
@@ -881,7 +886,7 @@ struct caloClusterProducerTask {
       if (cpvclu.amplitude() < static_cast<std::vector<double>>(cpvMinE)[static_cast<int>(cpvclu.moduleNumber()) - 2]) {
         continue;
       }
-      int index = CpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
+      int index = cpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
       cpvMatchPoints[index].emplace_back(cpvclu.posX(), cpvclu.posZ());
     }
     if (cpvNMatchPoints.size()) {
@@ -890,9 +895,9 @@ struct caloClusterProducerTask {
       }
     }
     // same for tracks
-    std::vector<trackMatch> trackMatchPoints[kCpvCells]; // tracks hit in grid/cell in PHOS
+    std::vector<TrackMatch> trackMatchPoints[kCpvCells]; // tracks hit in grid/cell in PHOS
     // Number of entries in each cell per TrigRecord
-    std::vector<trackTrigRec> trackNMatchPoints;
+    std::vector<TrackTrigRec> trackNMatchPoints;
     trackNMatchPoints.reserve(outputPHOSClusterTrigRecs.size());
 
     curBC = 0;
@@ -903,7 +908,7 @@ struct caloClusterProducerTask {
       }
     }
     bool keepBC = false;
-    for (auto& cluTR : outputPHOSClusterTrigRecs) {
+    for (const auto& cluTR : outputPHOSClusterTrigRecs) {
       if (cluTR.getBCData().toLong() == curBC) {
         keepBC = true;
         break;
@@ -930,7 +935,7 @@ struct caloClusterProducerTask {
           curBC = track.collision().bc_as<aod::BCsWithTimestamps>().globalBC();
         }
         keepBC = false;
-        for (auto& cluTR : outputPHOSClusterTrigRecs) {
+        for (const auto& cluTR : outputPHOSClusterTrigRecs) {
           if (cluTR.getBCData().toLong() == curBC) {
             keepBC = true;
             break;
@@ -954,7 +959,7 @@ struct caloClusterProducerTask {
       float trackX, trackZ;
       auto trackPar = getTrackPar(track);
       if (impactOnPHOS(trackPar, track.trackEtaEmcal(), track.trackPhiEmcal(), track.collision().posZ(), module, trackX, trackZ)) {
-        int index = CpvMatchIndex(module, trackX, trackZ);
+        int index = cpvMatchIndex(module, trackX, trackZ);
         trackMatchPoints[index].emplace_back(trackX, trackZ, track.globalIndex());
       }
     }
@@ -965,7 +970,7 @@ struct caloClusterProducerTask {
     }
 
     // Fill output tables
-    for (auto& cluTR : outputPHOSClusterTrigRecs) {
+    for (const auto& cluTR : outputPHOSClusterTrigRecs) {
       int firstClusterInEvent = cluTR.getFirstEntry();
       int lastClusterInEvent = firstClusterInEvent + cluTR.getNumberOfObjects();
 
@@ -1012,7 +1017,7 @@ struct caloClusterProducerTask {
         // Correction for the depth of the shower starting point (TDR p 127)
         const float para = 0.925;
         const float parb = 6.52;
-        float depth = para * TMath::Log(e) + parb;
+        float depth = para * std::log(e) + parb;
         posX -= posX * depth / 460.;
         posZ -= (posZ - vtx.Z()) * depth / 460.;
 
@@ -1025,53 +1030,53 @@ struct caloClusterProducerTask {
           continue;
         }
 
-        e = Nonlinearity(e);
+        e = nonlinearity(e);
 
         mom.SetMag(e);
 
         // CPV and track match
-        const float cellSizeX = 2 * cpvMaxX / kCpvX;
-        const float cellSizeZ = 2 * cpvMaxZ / kCpvZ;
+        const float cellSizeX = 2 * kCpvMaxX / kCpvX;
+        const float cellSizeZ = 2 * kCpvMaxZ / kCpvZ;
         // look 9 CPV regions around PHOS cluster
-        int phosIndex = CpvMatchIndex(mod, posX, posZ);
+        int phosIndex = cpvMatchIndex(mod, posX, posZ);
         std::vector<int> regions;
         regions.push_back(phosIndex);
-        if (posX > -cpvMaxX + cellSizeX) {
-          if (posZ > -cpvMaxZ + cellSizeZ) { // bottom left
+        if (posX > -kCpvMaxX + cellSizeX) {
+          if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom left
             regions.push_back(phosIndex - kCpvZ - 1);
           }
           regions.push_back(phosIndex - kCpvZ);
-          if (posZ < cpvMaxZ - cellSizeZ) { // top left
+          if (posZ < kCpvMaxZ - cellSizeZ) { // top left
             regions.push_back(phosIndex - kCpvZ + 1);
           }
         }
-        if (posZ > -cpvMaxZ + cellSizeZ) { // bottom
+        if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom
           regions.push_back(phosIndex - 1);
         }
-        if (posZ < cpvMaxZ - cellSizeZ) { // top
+        if (posZ < kCpvMaxZ - cellSizeZ) { // top
           regions.push_back(phosIndex + 1);
         }
-        if (posX < cpvMaxX - cellSizeX) {
-          if (posZ > -cpvMaxZ + cellSizeZ) { // bottom right
+        if (posX < kCpvMaxX - cellSizeX) {
+          if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom right
             regions.push_back(phosIndex + kCpvZ - 1);
           }
           regions.push_back(phosIndex + kCpvZ);
-          if (posZ < cpvMaxZ - cellSizeZ) { // top right
+          if (posZ < kCpvMaxZ - cellSizeZ) { // top right
             regions.push_back(phosIndex + kCpvZ + 1);
           }
         }
-        float sigmaX = 1. / TMath::Min(5.2, 1.111 + 0.56 * TMath::Exp(-0.031 * e * e) + 4.8 / TMath::Power(e + 0.61, 3)); // inverse sigma X
-        float sigmaZ = 1. / TMath::Min(3.3, 1.12 + 0.35 * TMath::Exp(-0.032 * e * e) + 0.75 / TMath::Power(e + 0.24, 3)); // inverse sigma Z
+        float sigmaX = 1. / std::min(5.2, 1.111 + 0.56 * std::exp(-0.031 * e * e) + 4.8 / std::pow(e + 0.61, 3)); // inverse sigma X
+        float sigmaZ = 1. / std::min(3.3, 1.12 + 0.35 * std::exp(-0.032 * e * e) + 0.75 / std::pow(e + 0.24, 3)); // inverse sigma Z
         float cpvdist = 99., trackdist = 99.;
         // float cpvDx = 0., cpvDz = 0.;
         float trackDx = 9999., trackDz = 9999.;
         int trackindex = -1;
-        for (int indx : regions) {
+        for (const int indx : regions) {
           if (cpvPoints != cpvNMatchPoints.end()) {
             if (indx >= 0 && indx < kCpvCells) {
               for (int ii = cpvPoints->mStart[indx]; ii < cpvPoints->mEnd[indx]; ii++) {
                 auto p = cpvMatchPoints[indx][ii];
-                float d = pow((p.first - posX) * sigmaX, 2) + pow((p.second - posZ) * sigmaZ, 2);
+                float d = std::pow((p.first - posX) * sigmaX, 2) + std::pow((p.second - posZ) * sigmaZ, 2);
                 if (d < cpvdist) {
                   cpvdist = d;
                 }
@@ -1083,7 +1088,7 @@ struct caloClusterProducerTask {
           if (trackPoints != trackNMatchPoints.end()) {
             for (int ii = trackPoints->mStart[indx]; ii < trackPoints->mEnd[indx]; ii++) {
               auto pp = trackMatchPoints[indx][ii];
-              float d = pow((pp.pX - posX) * sigmaX, 2) + pow((pp.pZ - posZ) * sigmaZ, 2); // TODO different sigma for tracks
+              float d = std::pow((pp.pX - posX) * sigmaX, 2) + std::pow((pp.pZ - posZ) * sigmaZ, 2); // TODO different sigma for tracks
               if (d < trackdist) {
                 trackdist = d;
                 trackDx = pp.pX - posX;
@@ -1095,10 +1100,10 @@ struct caloClusterProducerTask {
         }
 
         if (cpvdist != 99.) {      // was evaluated
-          cpvdist = sqrt(cpvdist); // was squared
+          cpvdist = std::sqrt(cpvdist); // was squared
         }
         if (trackdist != 99.) {        // was evaluated
-          trackdist = sqrt(trackdist); // was squared
+          trackdist = std::sqrt(trackdist); // was squared
         }
 
         float lambdaShort = 0., lambdaLong = 0.;
@@ -1145,7 +1150,7 @@ struct caloClusterProducerTask {
   //------------------------------------------------------------
   void processFullMC(o2::aod::BCsWithTimestamps const& bcs,
                      o2::aod::Collisions const& colls,
-                     mcCells& cells,
+                     McCells const& cells,
                      o2::aod::CaloTriggers const&,
                      o2::aod::CPVClusters const& cpvs,
                      o2::aod::FullTracks const& tracks)
@@ -1169,7 +1174,7 @@ struct caloClusterProducerTask {
 
     std::map<int64_t, int> bcMap;
     int bcId = 0;
-    for (auto bc : bcs) {
+    for (const auto & bc : bcs) {
       bcMap[bc.globalBC()] = bcId;
       bcId++;
     }
@@ -1177,7 +1182,7 @@ struct caloClusterProducerTask {
     // If several collisions appear in BC, choose one with largers number of contributors
     std::map<int64_t, int> colMap;
     int colId = 0;
-    for (auto cl : colls) {
+    for (const auto & cl : colls) {
       auto colbc = colMap.find(cl.bc_as<aod::BCsWithTimestamps>().globalBC());
       if (colbc == colMap.end()) { // single collision per BC
         colMap[cl.bc_as<aod::BCsWithTimestamps>().globalBC()] = colId;
@@ -1194,11 +1199,11 @@ struct caloClusterProducerTask {
     // Fill output table
 
     // calibration may be updated by CCDB fetcher
-    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(mBadMapPath, timestamp);
-    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(mCalibPath, timestamp);
+    const o2::phos::BadChannelsMap* badMap = ccdb->getForTimeStamp<o2::phos::BadChannelsMap>(badMapPath, timestamp);
+    const o2::phos::CalibParams* calibParams = ccdb->getForTimeStamp<o2::phos::CalibParams>(calibPath, timestamp);
 
     if (!isMC && !skipL1phase) {
-      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(mL1PhasePath, timestamp);
+      const std::vector<int>* vec = ccdb->getForTimeStamp<std::vector<int>>(l1phasePath, timestamp);
       if (vec) {
         clusterizerPHOS->setL1phase((*vec)[0]);
       } else {
@@ -1228,7 +1233,7 @@ struct caloClusterProducerTask {
 
     o2::InteractionRecord ir;
     const int kPHOS = 0;
-    for (auto& c : cells) {
+    for (const auto& c : cells) {
       if (c.caloType() != kPHOS) // PHOS
         continue;
       // Fix for bug in trigger digits
@@ -1283,7 +1288,7 @@ struct caloClusterProducerTask {
     // Find  CPV clusters corresponding to PHOS trigger records
     std::vector<std::pair<float, float>> cpvMatchPoints[kCpvCells];
     // Number of entries in each cell per TrigRecord
-    std::vector<trackTrigRec> cpvNMatchPoints;
+    std::vector<TrackTrigRec> cpvNMatchPoints;
     cpvNMatchPoints.reserve(outputPHOSClusterTrigRecs.size());
 
     int64_t curBC = -1;
@@ -1312,7 +1317,7 @@ struct caloClusterProducerTask {
       if (cpvclu.amplitude() < static_cast<std::vector<double>>(cpvMinE)[static_cast<int>(cpvclu.moduleNumber()) - 2]) {
         continue;
       }
-      int index = CpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
+      int index = cpvMatchIndex(cpvclu.moduleNumber(), cpvclu.posX(), cpvclu.posZ());
       cpvMatchPoints[index].emplace_back(cpvclu.posX(), cpvclu.posZ());
     }
     if (cpvNMatchPoints.size()) {
@@ -1321,9 +1326,9 @@ struct caloClusterProducerTask {
       }
     }
     // same for tracks
-    std::vector<trackMatch> trackMatchPoints[kCpvCells]; // tracks hit in grid/cell in PHOS
+    std::vector<TrackMatch> trackMatchPoints[kCpvCells]; // tracks hit in grid/cell in PHOS
     // Number of entries in each cell per TrigRecord
-    std::vector<trackTrigRec> trackNMatchPoints;
+    std::vector<TrackTrigRec> trackNMatchPoints;
     trackNMatchPoints.reserve(outputPHOSClusterTrigRecs.size());
 
     curBC = -1;
@@ -1334,7 +1339,7 @@ struct caloClusterProducerTask {
       }
     }
     bool keepBC = false;
-    for (auto& cluTR : outputPHOSClusterTrigRecs) {
+    for (const auto& cluTR : outputPHOSClusterTrigRecs) {
       if (cluTR.getBCData().toLong() == curBC) {
         keepBC = true;
         break;
@@ -1361,7 +1366,7 @@ struct caloClusterProducerTask {
           curBC = track.collision().bc_as<aod::BCsWithTimestamps>().globalBC();
         }
         keepBC = false;
-        for (auto& cluTR : outputPHOSClusterTrigRecs) {
+        for (const auto& cluTR : outputPHOSClusterTrigRecs) {
           if (cluTR.getBCData().toLong() == curBC) {
             keepBC = true;
             break;
@@ -1385,7 +1390,7 @@ struct caloClusterProducerTask {
       float trackX, trackZ;
       auto trackPar = getTrackPar(track);
       if (impactOnPHOS(trackPar, track.trackEtaEmcal(), track.trackPhiEmcal(), track.collision().posZ(), module, trackX, trackZ)) {
-        int index = CpvMatchIndex(module, trackX, trackZ);
+        int index = cpvMatchIndex(module, trackX, trackZ);
         trackMatchPoints[index].emplace_back(trackX, trackZ, track.globalIndex());
       }
     }
@@ -1396,7 +1401,7 @@ struct caloClusterProducerTask {
     }
 
     // Fill output tables
-    for (auto& cluTR : outputPHOSClusterTrigRecs) {
+    for (const auto& cluTR : outputPHOSClusterTrigRecs) {
       int firstClusterInEvent = cluTR.getFirstEntry();
       int lastClusterInEvent = firstClusterInEvent + cluTR.getNumberOfObjects();
 
@@ -1442,7 +1447,7 @@ struct caloClusterProducerTask {
         // Correction for the depth of the shower starting point (TDR p 127)
         const float para = 0.925;
         const float parb = 6.52;
-        float depth = para * TMath::Log(e) + parb;
+        float depth = para * std::log(e) + parb;
         posX -= posX * depth / 460.;
         posZ -= (posZ - vtx.Z()) * depth / 460.;
 
@@ -1455,52 +1460,52 @@ struct caloClusterProducerTask {
           continue;
         }
 
-        e = Nonlinearity(e);
+        e = nonlinearity(e);
 
         mom.SetMag(e);
         // CPV and track match
-        const float cellSizeX = 2 * cpvMaxX / kCpvX;
-        const float cellSizeZ = 2 * cpvMaxZ / kCpvZ;
+        const float cellSizeX = 2 * kCpvMaxX / kCpvX;
+        const float cellSizeZ = 2 * kCpvMaxZ / kCpvZ;
         // look 9 CPV regions around PHOS cluster
-        int phosIndex = CpvMatchIndex(mod, posX, posZ);
+        int phosIndex = cpvMatchIndex(mod, posX, posZ);
         std::vector<int> regions;
         regions.push_back(phosIndex);
-        if (posX > -cpvMaxX + cellSizeX) {
-          if (posZ > -cpvMaxZ + cellSizeZ) { // bottom left
+        if (posX > -kCpvMaxX + cellSizeX) {
+          if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom left
             regions.push_back(phosIndex - kCpvZ - 1);
           }
           regions.push_back(phosIndex - kCpvZ);
-          if (posZ < cpvMaxZ - cellSizeZ) { // top left
+          if (posZ < kCpvMaxZ - cellSizeZ) { // top left
             regions.push_back(phosIndex - kCpvZ + 1);
           }
         }
-        if (posZ > -cpvMaxZ + cellSizeZ) { // bottom
+        if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom
           regions.push_back(phosIndex - 1);
         }
-        if (posZ < cpvMaxZ - cellSizeZ) { // top
+        if (posZ < kCpvMaxZ - cellSizeZ) { // top
           regions.push_back(phosIndex + 1);
         }
-        if (posX < cpvMaxX - cellSizeX) {
-          if (posZ > -cpvMaxZ + cellSizeZ) { // bottom right
+        if (posX < kCpvMaxX - cellSizeX) {
+          if (posZ > -kCpvMaxZ + cellSizeZ) { // bottom right
             regions.push_back(phosIndex + kCpvZ - 1);
           }
           regions.push_back(phosIndex + kCpvZ);
-          if (posZ < cpvMaxZ - cellSizeZ) { // top right
+          if (posZ < kCpvMaxZ - cellSizeZ) { // top right
             regions.push_back(phosIndex + kCpvZ + 1);
           }
         }
-        float sigmaX = 1. / TMath::Min(5.2, 1.111 + 0.56 * TMath::Exp(-0.031 * e * e) + 4.8 / TMath::Power(e + 0.61, 3)); // inverse sigma X
-        float sigmaZ = 1. / TMath::Min(3.3, 1.12 + 0.35 * TMath::Exp(-0.032 * e * e) + 0.75 / TMath::Power(e + 0.24, 3)); // inverse sigma Z
+        float sigmaX = 1. / std::min(5.2, 1.111 + 0.56 * std::exp(-0.031 * e * e) + 4.8 / std::pow(e + 0.61, 3)); // inverse sigma X
+        float sigmaZ = 1. / std::min(3.3, 1.12 + 0.35 * std::exp(-0.032 * e * e) + 0.75 / std::pow(e + 0.24, 3)); // inverse sigma Z
         float cpvdist = 99., trackdist = 99.;
         // float cpvDx = 0., cpvDz = 0.;
         float trackDx = 9999., trackDz = 9999.;
         int trackindex = -1;
-        for (int indx : regions) {
+        for (const int indx : regions) {
           if (cpvPoints != cpvNMatchPoints.end()) {
             if (indx >= 0 && indx < kCpvCells) {
               for (int ii = cpvPoints->mStart[indx]; ii < cpvPoints->mEnd[indx]; ii++) {
                 auto p = cpvMatchPoints[indx][ii];
-                float d = pow((p.first - posX) * sigmaX, 2) + pow((p.second - posZ) * sigmaZ, 2);
+                float d = std::pow((p.first - posX) * sigmaX, 2) + std::pow((p.second - posZ) * sigmaZ, 2);
                 if (d < cpvdist) {
                   cpvdist = d;
                 }
@@ -1511,7 +1516,7 @@ struct caloClusterProducerTask {
           if (trackPoints != trackNMatchPoints.end()) {
             for (int ii = trackPoints->mStart[indx]; ii < trackPoints->mEnd[indx]; ii++) {
               auto pp = trackMatchPoints[indx][ii];
-              float d = pow((pp.pX - posX) * sigmaX, 2) + pow((pp.pZ - posZ) * sigmaZ, 2); // TODO different sigma for tracks
+              float d = std::pow((pp.pX - posX) * sigmaX, 2) + std::pow((pp.pZ - posZ) * sigmaZ, 2); // TODO different sigma for tracks
               if (d < trackdist) {
                 trackdist = d;
                 trackDx = pp.pX - posX;
@@ -1523,10 +1528,10 @@ struct caloClusterProducerTask {
         }
 
         if (cpvdist != 99.) {      // was evaluated
-          cpvdist = sqrt(cpvdist); // was squared
+          cpvdist = std::sqrt(cpvdist); // was squared
         }
         if (trackdist != 99.) {        // was evaluated
-          trackdist = sqrt(trackdist); // was squared
+          trackdist = std::sqrt(trackdist); // was squared
         }
 
         float lambdaShort = 0., lambdaLong = 0.;
@@ -1540,7 +1545,7 @@ struct caloClusterProducerTask {
         mclabels.clear();
         mcamplitudes.clear();
         gsl::span<const o2::phos::MCLabel> spDigList = outputTruthCont.getLabels(i);
-        for (auto cellLab : spDigList) {
+        for (const auto & cellLab : spDigList) {
           mclabels.push_back(cellLab.getTrackID()); // Track ID in current event?
           mcamplitudes.push_back(cellLab.getEdep());
         }
@@ -1583,15 +1588,15 @@ struct caloClusterProducerTask {
 
   PROCESS_SWITCH(caloClusterProducerTask, processFullMC, "Process MC with track matching", false);
 
-  int CpvMatchIndex(int16_t module, float x, float z)
+  int cpvMatchIndex(int16_t module, float x, float z)
   {
     // calculate cell index in grid over PHOS detector
-    const float cellSizeX = 2 * cpvMaxX / kCpvX;
-    const float cellSizeZ = 2 * cpvMaxZ / kCpvZ;
+    const float cellSizeX = 2 * kCpvMaxX / kCpvX;
+    const float cellSizeZ = 2 * kCpvMaxZ / kCpvZ;
     // in track matching tracks can be beyond CPV surface
     // assign these tracks to the closest cell
-    int ix = std::max(0, static_cast<int>((x + cpvMaxX) / cellSizeX));
-    int iz = std::max(0, static_cast<int>((z + cpvMaxZ) / cellSizeZ));
+    int ix = std::max(0, static_cast<int>((x + kCpvMaxX) / cellSizeX));
+    int iz = std::max(0, static_cast<int>((z + kCpvMaxZ) / cellSizeZ));
     if (ix >= kCpvX) {
       ix = kCpvX - 1;
     }
@@ -1612,17 +1617,12 @@ struct caloClusterProducerTask {
     const float etaMax = 0.178266;
     double bz = o2::base::Propagator::Instance()->getNominalBz(); // magnetic field
 
-    if (trackPhi < phiMin || trackPhi > phiMax || abs(trackEta) > etaMax) { // do not match even approximately
+    trackPhi = RecoDecay::constrainAngle(trackPhi,0.,1); //constrain angle to range 0,twoPi
+    if (trackPhi < phiMin || trackPhi > phiMax || std::abs(trackEta) > etaMax) { // do not match even approximately
       return false;
     }
 
     const float dphi = 20. * 0.017453293;
-    if (trackPhi < 0.) {
-      trackPhi += TMath::TwoPi();
-    }
-    if (trackPhi > TMath::TwoPi()) {
-      trackPhi -= TMath::TwoPi();
-    }
     module = 1 + static_cast<int16_t>((trackPhi - phiMin) / dphi);
     if (module < 1) {
       module = 1;
@@ -1632,11 +1632,11 @@ struct caloClusterProducerTask {
     }
 
     // get PHOS radius
-    constexpr float shiftY = -1.26;    // Depth-optimized
+    const double shiftY = -1.26;    // Depth-optimized
     double posL[3] = {0., 0., shiftY}; // local position at the center of module
     double posG[3] = {0};
     geomPHOS->getAlignmentMatrix(module)->LocalToMaster(posL, posG);
-    double rPHOS = sqrt(posG[0] * posG[0] + posG[1] * posG[1]);
+    double rPHOS = std::sqrt(posG[0] * posG[0] + posG[1] * posG[1]);
     double alpha = (230. + 20. * module) * 0.017453293;
 
     // During main reconstruction track was propagated to radius 460 cm with accounting material
@@ -1661,7 +1661,7 @@ struct caloClusterProducerTask {
       return false;
     }
     alpha = trackPar.getAlpha();
-    double ca = cos(alpha), sa = sin(alpha);
+    double ca = std::cos(alpha), sa = std::sin(alpha);
     posG[0] = trackPar.getX() * ca - trackPar.getY() * sa;
     posG[1] = trackPar.getY() * ca + trackPar.getX() * sa;
     posG[2] = trackPar.getZ();
@@ -1670,7 +1670,7 @@ struct caloClusterProducerTask {
     trackX = posL[0];
     trackZ = posL[1];
     // If trackX beyond the module, switch to the next one
-    if (abs(trackX) < xmax || (trackX < -xmax && module == 1) || (trackX > xmax && module == 4)) {
+    if (std::abs(trackX) < xmax || (trackX < -xmax && module == 1) || (trackX > xmax && module == 4)) {
       return true;
     }
     // re-do extrapolation to correct module
@@ -1687,7 +1687,7 @@ struct caloClusterProducerTask {
     posL[1] = 0.;
     posL[2] = shiftY; // local position at the center of module
     geomPHOS->getAlignmentMatrix(module)->LocalToMaster(posL, posG);
-    rPHOS = sqrt(posG[0] * posG[0] + posG[1] * posG[1]);
+    rPHOS = std::sqrt(posG[0] * posG[0] + posG[1] * posG[1]);
 
     if (!trackPar.rotate(alpha) ||
         !prop->PropagateToXBxByBz(trackPar, xtrg, 0.95, 10, o2::base::Propagator::MatCorrType::USEMatCorrNONE)) {
@@ -1703,8 +1703,8 @@ struct caloClusterProducerTask {
       return false;
     }
     alpha = trackPar.getAlpha();
-    ca = cos(alpha);
-    sa = sin(alpha);
+    ca = std::cos(alpha);
+    sa = std::sin(alpha);
     posG[0] = trackPar.getX() * ca - trackPar.getY() * sa;
     posG[1] = trackPar.getY() * ca + trackPar.getX() * sa;
     posG[2] = trackPar.getZ();
@@ -1715,13 +1715,37 @@ struct caloClusterProducerTask {
     return true;
   }
 
-  float Nonlinearity(float en)
+  float nonlinearity(float en)
   {
     // Correct for non-linearity
-    switch (mNonlinType) {
+    switch (nonlinType) {
       case 0:
         return en;
-      case 1: {
+      case 1: { // Data Run3
+        const double a = 9.3494e-01;
+        const double b = 1.00526e-02;
+        const double c = 8.45164e-02;
+        const double d = -1.03364e-02;
+        const double f = 5.4803e-03;
+        const double g = 0.779983;
+        const double h = 0.622282;
+        const double k = 8.0182e-05;
+        double eMin = std::max(float(0.1), en); // Parameterization valid down to 100 MeV
+        return en * (a + b * eMin + c / eMin + d / (eMin * eMin) + f / ((eMin - g) * (eMin - g) + h * h) + k / std::pow(eMin, 4));
+      }
+      case 2: { // MC
+        const double a = 1.14875;
+        const double b = -1.24286e-04;
+        const double c = -0.0498217;
+        const double d = -0.00215362;
+        const double f = 0.886539;
+        const double g = -1.98282;
+        const double h = 0.0178562;
+        const double k = 5.03164e-04;
+        double eMin = std::max(float(0.1), en); // Parameterization valid down to 100 MeV
+        return en * (a + b * eMin + c / eMin + d / (eMin * eMin) + f / ((eMin - g) * (eMin - g) + h * h) + k / std::pow(eMin, 4));
+      }
+      case 3: { // Obsolete data Run3
         const double a = 9.34913e-01;
         const double b = 2.33e-03;
         const double c = -8.10e-05;
