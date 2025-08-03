@@ -14,6 +14,25 @@
 /// \author Dmitri Peresunko <Dmitri.Peresunko@cern.ch>
 ///
 
+#include "Common/DataModel/CaloClusters.h"
+#include "Common/DataModel/Centrality.h"
+#include "Common/DataModel/EventSelection.h"
+#include "Common/DataModel/Multiplicity.h"
+#include "EventFiltering/Zorro.h"
+#include "EventFiltering/ZorroSummary.h"
+
+#include "CCDB/BasicCCDBManager.h"
+#include "CommonDataFormat/InteractionRecord.h"
+#include "DataFormatsParameters/GRPLHCIFData.h"
+#include "Framework/ASoA.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/ConfigParamSpec.h"
+#include "Framework/HistogramRegistry.h"
+#include "Framework/runDataProcessing.h"
+#include "PHOSBase/Geometry.h"
+
 #include <algorithm>
 #include <climits>
 #include <cstdlib>
@@ -21,27 +40,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-
-#include "Common/DataModel/CaloClusters.h"
-#include "Common/DataModel/Centrality.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/Multiplicity.h"
-
-#include "Framework/ConfigParamSpec.h"
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoA.h"
-#include "Framework/ASoAHelpers.h"
-#include "Framework/HistogramRegistry.h"
-
-#include "EventFiltering/Zorro.h"
-#include "EventFiltering/ZorroSummary.h"
-
-#include "PHOSBase/Geometry.h"
-#include "CommonDataFormat/InteractionRecord.h"
-#include "CCDB/BasicCCDBManager.h"
-#include "DataFormatsParameters/GRPLHCIFData.h"
+#include <utility>
 
 using namespace o2;
 using namespace o2::aod::evsel;
@@ -52,7 +51,7 @@ struct PhosPi0 {
   Configurable<bool> skimmedProcessing{"skimmedProcessing", false, "Skimmed dataset processing"};
   Configurable<std::string> trigName{"trigName", "fPHOSPhoton", "name of offline trigger"};
   Configurable<std::string> zorroCCDBpath{"zorroCCDBpath", "/Users/m/mpuccio/EventFiltering/OTS/", "path to the zorro ccdb objects"};
-  Configurable<int> evSelTrig{"evSelTrig", aod::evsel::kIsTriggerTVX, "Select events with this trigger"};
+  Configurable<int> evSelTrig{"evSelTrig", kTVXinPHOS, "Select events with this trigger"};
   Configurable<bool> isMC{"isMC", false, "to fill MC histograms"};
   Configurable<float> minCluE{"minCluE", 0.3, "Minimum cluster energy for analysis"};
   Configurable<float> minCluTime{"minCluTime", -25.e-9, "Min. cluster time"};
@@ -107,14 +106,19 @@ struct PhosPi0 {
   int mRunNumber = 0;    // Current run number
   int mixedEventBin = 0; // Which list of Mixed use for mixing
   std::vector<Photon> mCurEvent;
-  static constexpr int kMaxMixBins = 20; // maximal number of kinds of events for mixing
+  static constexpr int kMixBinsZ = 20;
+  static constexpr int kMixBinsPhi = 6;
+  static constexpr int kMaxMixBins = kMixBinsZ * kMixBinsPhi + 1; // maximal number of bins of events for mixing: vtx*event plane + hard
+  static constexpr double kEmixCut = 10.;                         // minimal clu energy for special hard mixing bin
+  static constexpr int kHardMixBin = kMaxMixBins - 1;             // special hard mixing bin
+
   std::array<std::deque<std::vector<Photon>>, kMaxMixBins> mMixedEvents;
   std::array<std::deque<std::vector<Photon>>, kMaxMixBins> mAmbMixedEvents;
 
   int mPrevMCColId = -1; // mark MC collissions already scanned
   // fast access to histos
   TH1* hColl;
-  TH3 *hReMod, *hMiMod;
+  TH3 *hReMod, *hMiMod, *hReAsym, *hMiAsym;
   TH2 *hReAll, *hReDisp, *hReCPV, *hReBoth, *hSignalAll, *hPi0SignalAll, *hPi0SignalCPV, *hPi0SignalDisp,
     *hPi0SignalBoth, *hMiAll, *hMiDisp, *hMiCPV, *hMiBoth;
   TH2 *hReOneAll, *hReOneDisp, *hReOneCPV, *hReOneBoth, *hMiOneAll, *hMiOneDisp, *hMiOneCPV, *hMiOneBoth;
@@ -154,8 +158,8 @@ struct PhosPi0 {
     hColl->GetXaxis()->SetBinLabel(4, "T0a&&T0c");
     hColl->GetXaxis()->SetBinLabel(5, "kTVXinPHOS");
     hColl->GetXaxis()->SetBinLabel(6, "kIsTriggerTVX");
-    hColl->GetXaxis()->SetBinLabel(7, "PHOSClu");
-    hColl->GetXaxis()->SetBinLabel(8, "PHOSClu&&kTVXinPHOS");
+    hColl->GetXaxis()->SetBinLabel(7, "kPHOS");
+    hColl->GetXaxis()->SetBinLabel(8, "kPHOS&&kTVXinPHOS");
     hColl->GetXaxis()->SetBinLabel(9, "Accepted");
 
     auto h2{std::get<std::shared_ptr<TH1>>(mHistManager.add("eventsBC", "Number of events per trigger", HistType::kTH1F, {{8, 0., 8.}}))};
@@ -186,6 +190,7 @@ struct PhosPi0 {
       mHistManager.add("cluCPVOcc", "Cluster with CPV occupancy", HistType::kTH3F, {phiAxis, zAxis, modAxis});
       mHistManager.add("cluDispOcc", "Cluster with Disp occupancy", HistType::kTH3F, {phiAxis, zAxis, modAxis});
       mHistManager.add("cluBothOcc", "Cluster with Both occupancy", HistType::kTH3F, {phiAxis, zAxis, modAxis});
+      mHistManager.add("qvec", "qvector", HistType::kTH2F, {{10, 0, o2::constants::math::PI, "#phi", "#phi (rad)"}, {10, 0., 1., "|q|", "|q|"}});
     }
 
     hReMod = std::get<std::shared_ptr<TH3>>(mHistManager.add("mggReModComb", "inv mass per module",
@@ -202,6 +207,9 @@ struct PhosPi0 {
                 .get();
     hReBoth = std::get<std::shared_ptr<TH2>>(mHistManager.add("mggReBoth", "inv mass for centrality",
                                                               HistType::kTH2F, {mggAxis, ptAxis}))
+                .get();
+    hReAsym = std::get<std::shared_ptr<TH3>>(mHistManager.add("mggReAsym", "inv mass vs pt vs asym",
+                                                              HistType::kTH3F, {mggAxis, ptAxis, {10, 0., 1., "asym", "a"}}))
                 .get();
     hReOneAll = std::get<std::shared_ptr<TH2>>(mHistManager.add("mggReOneAll", "inv mass for centrality",
                                                                 HistType::kTH2F, {mggAxis, ptAxis}))
@@ -262,6 +270,9 @@ struct PhosPi0 {
     hMiBoth = std::get<std::shared_ptr<TH2>>(mHistManager.add("mggMiBoth", "inv mass for centrality",
                                                               HistType::kTH2F, {mggAxis, ptAxis}))
                 .get();
+    hMiAsym = std::get<std::shared_ptr<TH3>>(mHistManager.add("mggMiAsym", "inv mass vs pt vs asym",
+                                                              HistType::kTH3F, {mggAxis, ptAxis, {10, 0., 1., "asym", "a"}}))
+                .get();
     hMiOneAll = std::get<std::shared_ptr<TH2>>(mHistManager.add("mggMiOneAll", "inv mass for centrality",
                                                                 HistType::kTH2F, {mggAxis, ptAxis}))
                   .get();
@@ -306,25 +317,28 @@ struct PhosPi0 {
   /// \brief Process PHOS data
   void processData(SelCollisions::iterator const& col,
                    aod::CaloClusters const& clusters,
+                   aod::FullTracks const& tracks,
                    aod::BCsWithTimestamps const&)
   {
     aod::McParticles const* mcPart = nullptr;
-    scanAll<false>(col, clusters, mcPart);
+    scanAll<false>(col, clusters, tracks, mcPart);
   }
   PROCESS_SWITCH(PhosPi0, processData, "processData", true);
   void processMC(SelCollisionsMC::iterator const& col,
                  McClusters const& clusters,
+                 aod::FullTracks const& tracks,
                  aod::McParticles const& mcPart,
                  aod::McCollisions const& /*mcCol*/,
                  aod::BCsWithTimestamps const&)
   {
-    scanAll<true>(col, clusters, &mcPart);
+    scanAll<true>(col, clusters, tracks, &mcPart);
   }
   PROCESS_SWITCH(PhosPi0, processMC, "processMC", false);
 
   template <bool isMC, typename TCollision, typename TClusters>
   void scanAll(TCollision& col,
                TClusters& clusters,
+               aod::FullTracks const& tracks,
                aod::McParticles const* mcPart)
   {
     mixedEventBin = 0;
@@ -341,7 +355,7 @@ struct PhosPi0 {
         return; ///
       }
     } else {
-      if (!col.selection_bit(evSelTrig)) {
+      if (!col.alias_bit(evSelTrig)) {
         return;
       }
     }
@@ -350,13 +364,14 @@ struct PhosPi0 {
     const double vtxCut = 10.;
     double vtxZ = col.posZ();
     mHistManager.fill(HIST("vertex"), vtxZ);
-    bool isColSelected = false;
-    if constexpr (isMC) {
-      isColSelected = (col.selection_bit(kIsTriggerTVX) && (clusters.size() > 0));
-    } else {
-      isColSelected = col.selection_bit(evSelTrig) && std::abs(vtxZ) < vtxCut; // col.alias_bit(evSelTrig)
-      //               collision.selection_bit(aod::evsel::kNoTimeFrameBorder);
-    }
+    bool isColSelected = col.alias_bit(evSelTrig) && std::abs(vtxZ) < vtxCut;
+    ;
+    // if constexpr (isMC) {
+    //   isColSelected = (col.selection_bit(kIsTriggerTVX) && (clusters.size() > 0));
+    // } else {
+    //   isColSelected = col.alias_bit(evSelTrig) && std::abs(vtxZ) < vtxCut; //
+    //   //               collision.selection_bit(aod::evsel::kNoTimeFrameBorder);
+    // }
 
     if (col.selection_bit(kIsBBT0A) || col.selection_bit(kIsBBT0C)) {
       hColl->Fill(2.5);
@@ -367,54 +382,27 @@ struct PhosPi0 {
     if (col.alias_bit(kTVXinPHOS)) {
       hColl->Fill(4.5);
     }
-    if (col.selection_bit(kIsTriggerTVX)) {
+    if (col.alias_bit(kIsTriggerTVX)) {
       hColl->Fill(5.5);
     }
-    if (clusters.size() > 0) {
+    if (col.alias_bit(kPHOS)) {
       hColl->Fill(6.5);
       if (col.alias_bit(kTVXinPHOS)) {
         hColl->Fill(7.5);
       }
     }
-    // //Event Plane| jet orientation
-    //   if (flag & (kProton | kDeuteron | kTriton | kHe3 | kHe4) || doprocessMC) { /// ignore PID pre-selections for the MC
-    //     if constexpr (std::is_same<Tcoll, CollWithEP>::value) {
-    //       nuclei::candidates_flow.emplace_back(NucleusCandidateFlow{
-    //         collision.centFV0A(),
-    //         collision.centFT0M(),
-    //         collision.centFT0A(),
-    //         collision.centFT0C(),
-    //         collision.psiFT0A(),
-    //         collision.multFT0A(),
-    //         collision.psiFT0C(),
-    //         collision.multFT0C(),
-    //         collision.psiTPC(),
-    //         collision.psiTPCL(),
-    //         collision.psiTPCR(),
-    //         collision.multTPC()});
-    //     } else if constexpr (std::is_same<Tcoll, CollWithQvec>::value) {
-    //       nuclei::candidates_flow.emplace_back(NucleusCandidateFlow{
-    //         collision.centFV0A(),
-    //         collision.centFT0M(),
-    //         collision.centFT0A(),
-    //         collision.centFT0C(),
-    //         0.5 * std::atan2(collision.qvecFT0AIm(), collision.qvecFT0ARe()),
-    //         collision.multFT0A(),
-    //         0.5 * std::atan2(collision.qvecFT0CIm(), collision.qvecFT0CRe()),
-    //         collision.multFT0C(),
-    //         -999.,
-    //         0.5 * std::atan2(collision.qvecBNegIm(), collision.qvecBNegRe()),
-    //         0.5 * std::atan2(collision.qvecBPosIm(), collision.qvecBPosRe()),
-    //         collision.multTPC()});
-    //     }
-
-    int mult = 1.; // multiplicity TODO!!!
-    mixedEventBin = findMixedEventBin(vtxZ, mult);
 
     if (!isColSelected) {
       return;
     }
     hColl->Fill(8.5);
+
+    int mult = 1.; // multiplicity TODO!!!
+    std::pair<double, double> q = evalQvec(tracks);
+
+    // find proper event for mixing
+    // note, that if one find hard cluster in PHOS later, it will change bin to special one
+    mixedEventBin = findMixedEventBin(vtxZ, mult, q);
 
     // Fill MC distributions
     // pion rapidity, pt, phi
@@ -444,7 +432,7 @@ struct PhosPi0 {
             if (part.mcCollision().bcId() != col.bcId()) {
               continue;
             }
-            if (part.pdgCode() == 111) {
+            if (part.pdgCode() == o2::constants::physics::Pdg::kPI0) {
               double r = std::sqrt(std::pow(part.vx(), 2) + std::pow(part.vy(), 2));
               if (r < 0.5) {
                 mHistManager.fill(HIST("hMCPi0RapPrim"), part.y());
@@ -481,6 +469,9 @@ struct PhosPi0 {
           clu.time() > maxCluTime || clu.time() < minCluTime ||
           clu.m02() < minM02) {
         continue;
+      }
+      if (clu.e() > kEmixCut) {
+        mixedEventBin = kHardMixBin;
       }
       if (fillQC) {
         mHistManager.fill(HIST("cluSp"), clu.e(), clu.mod());
@@ -529,6 +520,7 @@ struct PhosPi0 {
         }
         hReMod->Fill(m, pt, modComb, w);
         hReAll->Fill(m, pt, w);
+        hReAsym->Fill(m, pt, std::abs((ph1.e - ph2.e) / (ph1.e + ph2.e)), w);
         hReOneAll->Fill(m, ph1.pt(), w);
         hReOneAll->Fill(m, ph2.pt(), w);
         if (ph1.isCPVOK()) {
@@ -584,7 +576,7 @@ struct PhosPi0 {
           int cp = commonParentPDG(ph1.label, ph2.label, mcPart);
           if (cp != 0) {
             hSignalAll->Fill(m, pt, w);
-            if (cp == 111) {
+            if (cp == o2::constants::physics::Pdg::kPI0) {
               isPi0 = true;
               hPi0SignalAll->Fill(m, pt, w);
             }
@@ -633,6 +625,7 @@ struct PhosPi0 {
           }
           hMiMod->Fill(m, pt, modComb, w);
           hMiAll->Fill(m, pt, w);
+          hMiAsym->Fill(m, pt, std::abs((ph1.e - ph2.e) / (ph1.e + ph2.e)), w);
           hMiOneAll->Fill(m, ph1.pt(), w);
           hMiOneAll->Fill(m, ph2.pt(), w);
           if (ph1.isCPVOK()) {
@@ -681,9 +674,10 @@ struct PhosPi0 {
     mixedEventBin = 0;
 
     mHistManager.fill(HIST("eventsBC"), 0.);
-    double vtxZ = 0; // no vtx info
-    int mult = 1.;   // multiplicity TODO!!!
-    mixedEventBin = findMixedEventBin(vtxZ, mult);
+    double vtxZ = 0;                   // no vtx info
+    int mult = 1.;                     // multiplicity TODO!!!
+    std::pair<double, double> q{0, 0}; // fake q-vector as no tracks
+    mixedEventBin = findMixedEventBin(vtxZ, mult, q);
 
     if (!isSelected) {
       return;
@@ -831,17 +825,27 @@ struct PhosPi0 {
            4.;
   }
   //_____________________________________________________________________________
-  int findMixedEventBin(double vtxZ, double /*mult */)
+  int findMixedEventBin(double vtxZ, double /*mult*/, std::pair<double, double>& q)
   {
     // calculate index for event mixing
     const double zwidth = 1.; // Width of zvtx bin
-    int res = static_cast<int>((vtxZ + 10.) / zwidth);
+    int iz = static_cast<int>((vtxZ + 10.) / zwidth);
 
-    if (res < 0)
-      return 0;
-    if (res >= kMaxMixBins)
-      return kMaxMixBins - 1;
-    return res;
+    if (iz < 0)
+      iz = 0;
+    if (iz >= kMixBinsZ)
+      iz = kMixBinsZ - 1;
+
+    // event plane orientation
+    double phi = 0.5 * std::atan2(q.second, q.first); // 1/2 due to second order flow harmonic
+    while (phi < 0)
+      phi += o2::constants::math::PI;
+    while (phi > o2::constants::math::PI)
+      phi -= o2::constants::math::PI;
+    int iphi = static_cast<int>(kMixBinsPhi * phi / o2::constants::math::PI);
+    mHistManager.fill(HIST("qvec"), phi, std::sqrt(q.first * q.first + q.second * q.second));
+
+    return iz * iphi;
   }
   //----------------------------------------
   int commonParentPDG(int lab1, int lab2, aod::McParticles const* mcParticles)
@@ -857,13 +861,16 @@ struct PhosPi0 {
           return mcParticles->iteratorAt(iparent1).pdgCode();
         }
         auto parent2 = mcParticles->iteratorAt(iparent2);
-        if (parent2.mothersIds().size() == 0 || parent2.pdgCode() == 21 || std::abs(parent2.pdgCode()) < 11 || std::abs(parent2.pdgCode()) > 5000) { // no parents, parent not quark/gluon, strings
+        // no parents, parent not quark/gluon, strings
+        if (parent2.mothersIds().size() == 0 || parent2.pdgCode() == 21 ||            // o2-linter: disable=pdg/explicit-code (no code)
+            std::abs(parent2.pdgCode()) < 11 || std::abs(parent2.pdgCode()) > 5000) { // o2-linter: disable=pdg/explicit-code (no code)
           break;
         }
         iparent2 = parent2.mothersIds()[0];
       }
       auto parent1 = mcParticles->iteratorAt(iparent1);
-      if (parent1.mothersIds().size() == 0 || parent1.pdgCode() == 21 || std::abs(parent1.pdgCode()) < 11 || std::abs(parent1.pdgCode()) > 5000) { // no parents, parent not quark/gluon, strings
+      // no parents, parent not quark/gluon, strings
+      if (parent1.mothersIds().size() == 0 || parent1.pdgCode() == 21 || std::abs(parent1.pdgCode()) < 11 || std::abs(parent1.pdgCode()) > 5000) { // o2-linter: disable=pdg/explicit-code (no code)
         return 0;
       }
       iparent1 = parent1.mothersIds()[0];
@@ -879,24 +886,24 @@ struct PhosPi0 {
     if (tofEffParam == 0) {
       return 1.;
     }
-    if (tofEffParam == 1) { // Run2 100 ns
+    if (tofEffParam == 1) { // Run2 100 ns //o2-linter: disable=magic-number (local parameterization)
       // parameterization 01.08.2020
-      if (en > 1.1)
+      if (en > 1.1) // o2-linter: disable=magic-number (local parameterization)
         en = 1.1;
-      if (en < 0.11)
+      if (en < 0.11) // o2-linter: disable=magic-number (local parameterization)
         en = 0.11;
-      return std::exp((-1.15295e+05 + 2.26754e+05 * en - 1.26063e+05 * en * en + en * en * en) /
-                      (1. - 3.16443e+05 * en + 3.68044e+06 * en * en + en * en * en));
+      return std::exp((-1.15295e+05 + 2.26754e+05 * en - 1.26063e+05 * en * en + en * en * en) / // o2-linter: disable=magic-number (local parameterization)
+                      (1. - 3.16443e+05 * en + 3.68044e+06 * en * en + en * en * en));           // o2-linter: disable=magic-number (local parameterization)
     }
-    if (tofEffParam == 2) { // Run2 30 ns
-      if (en > 1.6)
+    if (tofEffParam == 2) { // Run2 30 ns //o2-linter: disable=magic-number
+      if (en > 1.6)         // o2-linter: disable=magic-number
         en = 1.6;
-      return 1. / (1. + std::exp((4.83230e+01 - 8.89758e+01 * en + 1.10897e+03 * en * en - 5.73755e+03 * en * en * en -
-                                  1.43777e+03 * en * en * en * en) /
-                                 (1. - 1.23667e+02 * en + 1.07255e+03 * en * en + 5.87221e+02 * en * en * en)));
+      return 1. / (1. + std::exp((4.83230e+01 - 8.89758e+01 * en + 1.10897e+03 * en * en - 5.73755e+03 * en * en * en - // o2-linter: disable=magic-number (local parameterization)
+                                  1.43777e+03 * en * en * en * en) /                                                    // o2-linter: disable=magic-number (local parameterization)
+                                 (1. - 1.23667e+02 * en + 1.07255e+03 * en * en + 5.87221e+02 * en * en * en)));        // o2-linter: disable=magic-number (local parameterization)
     }
-    if (tofEffParam == 2) { // Run2 12.5 ns
-      if (en < 4.6) {
+    if (tofEffParam == 3) { // Run2 12.5 ns //o2-linter: disable=magic-number (local parameterization)
+      if (en < 4.6) {       // o2-linter: disable=magic-number (local parameterization)
         return std::exp(3.64952e-03 *
                         (-5.80032e+01 - 1.53442e+02 * en + 1.30994e+02 * en * en + -3.53094e+01 * en * en * en + en * en * en * en) /
                         (-7.75638e-02 + 8.64761e-01 * en + 1.22320e+00 * en * en - 1.00177e+00 * en * en * en + en * en * en * en));
@@ -906,6 +913,30 @@ struct PhosPi0 {
       }
     }
     return 1.;
+  }
+  //_____________________________________________________________________________
+  std::pair<double, double> evalQvec(aod::FullTracks const& tracks)
+  {
+    // calculate approximate q-vector for event
+    const int ord = 2; // flow order
+    std::pair<double, double> q{0, 0};
+    int ntr = 0;
+    for (const auto& track : tracks) {
+      if (!track.has_collision()) { // ignore orphan tracks without collision
+        continue;
+      }
+      // if (!track.isGlobalTrack()) {  // only global tracks
+      //   continue;
+      // }
+      q.first += std::cos(ord * track.phi());
+      q.second += std::sin(ord * track.phi());
+      ntr++;
+    }
+    if (ntr > 0) {
+      q.first /= ntr;
+      q.second /= ntr;
+    }
+    return q;
   }
 };
 
