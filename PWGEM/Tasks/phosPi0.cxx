@@ -809,7 +809,7 @@ struct PhosPi0 {
     if (d == 1) {
       return 3 + std::min(m1, m2);
     }
-    if (d == 2) {   // o2-linter: disable=magic-number (algoritm value)
+    if (d == 2) { // o2-linter: disable=magic-number (algoritm value)
       return 6 + std::min(m1, m2);
     }
     return 9;
