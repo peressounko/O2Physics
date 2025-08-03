@@ -866,7 +866,7 @@ struct PhosPi0 {
         iparent2 = parent2.mothersIds()[0];
       }
       auto parent1 = mcParticles->iteratorAt(iparent1);
-      if (parent1.mothersIds().size() == 0 || parent1.pdgCode() == 21 || std::abs(parent1.pdgCode()) < 11 || std::abs(parent1.pdgCode()) > 5000) { // no parents, parent not quark/gluon, strings //o2-linter: disable=pdg/explicit-code 
+      if (parent1.mothersIds().size() == 0 || parent1.pdgCode() == 21 || std::abs(parent1.pdgCode()) < 11 || std::abs(parent1.pdgCode()) > 5000) { // no parents, parent not quark/gluon, strings //o2-linter: disable=pdg/explicit-code
         return 0;
       }
       iparent1 = parent1.mothersIds()[0];
@@ -884,22 +884,22 @@ struct PhosPi0 {
     }
     if (tofEffParam == 1) { // Run2 100 ns //o2-linter: disable=magic-number
       // parameterization 01.08.2020
-      if (en > 1.1) //o2-linter: disable=magic-number 
+      if (en > 1.1) // o2-linter: disable=magic-number
         en = 1.1;
-      if (en < 0.11) //o2-linter: disable=magic-number 
+      if (en < 0.11) // o2-linter: disable=magic-number
         en = 0.11;
       return std::exp((-1.15295e+05 + 2.26754e+05 * en - 1.26063e+05 * en * en + en * en * en) /
                       (1. - 3.16443e+05 * en + 3.68044e+06 * en * en + en * en * en));
     }
     if (tofEffParam == 2) { // Run2 30 ns //o2-linter: disable=magic-number
-      if (en > 1.6) //o2-linter: disable=magic-number 
+      if (en > 1.6)         // o2-linter: disable=magic-number
         en = 1.6;
       return 1. / (1. + std::exp((4.83230e+01 - 8.89758e+01 * en + 1.10897e+03 * en * en - 5.73755e+03 * en * en * en -
                                   1.43777e+03 * en * en * en * en) /
                                  (1. - 1.23667e+02 * en + 1.07255e+03 * en * en + 5.87221e+02 * en * en * en)));
     }
     if (tofEffParam == 3) { // Run2 12.5 ns //o2-linter: disable=magic-number
-      if (en < 4.6) { //o2-linter: disable=magic-number 
+      if (en < 4.6) {       // o2-linter: disable=magic-number
         return std::exp(3.64952e-03 *
                         (-5.80032e+01 - 1.53442e+02 * en + 1.30994e+02 * en * en + -3.53094e+01 * en * en * en + en * en * en * en) /
                         (-7.75638e-02 + 8.64761e-01 * en + 1.22320e+00 * en * en - 1.00177e+00 * en * en * en + en * en * en * en));
